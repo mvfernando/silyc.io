@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
@@ -71,6 +72,7 @@ const CLOUD_ENV: "sandbox" | "production" =
 function AppPage() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const search = useSearch({ from: "/_authenticated/app" });
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -601,6 +603,11 @@ function AppPage() {
 
       clearResume(projectId!);
       const finishedId = projectId!;
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["projects"] }),
+        qc.invalidateQueries({ queryKey: ["project", finishedId] }),
+        qc.invalidateQueries({ queryKey: ["project-versions", finishedId] }),
+      ]);
       toast.success(`−${formatDuration(stats.removedSeconds)} ${t.proj_saved}`, {
         action: {
           label: t.view_project,
@@ -621,11 +628,15 @@ function AppPage() {
       }
       if (cancelled) {
         await supabase.from("projects").update({ status: "cancelled" }).eq("id", projectId!);
+        await qc.invalidateQueries({ queryKey: ["projects"] });
+        await qc.invalidateQueries({ queryKey: ["project", projectId!] });
         appendLog({ level: "warn", step: "system", message: "job cancelled by user" });
         toast.message(t.cancelled);
       } else {
         console.error(err);
         await supabase.from("projects").update({ status: "error" }).eq("id", projectId!);
+        await qc.invalidateQueries({ queryKey: ["projects"] });
+        await qc.invalidateQueries({ queryKey: ["project", projectId!] });
         const mapped = mapError(err, lang);
         appendLog({ level: "error", step: "system", message: `${mapped.title} — ${mapped.raw}` });
         setLastError(mapped);

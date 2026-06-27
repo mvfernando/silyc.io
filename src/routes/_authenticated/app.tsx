@@ -38,6 +38,7 @@ import {
 } from "@/lib/resume-store";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 import { mapError, type MappedError } from "@/lib/error-mapper";
+import { validateUpload, withBackoff, isTransientCloudError } from "@/lib/validate-upload";
 
 const MAX_BYTES = 220 * 1024 * 1024;
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
@@ -100,6 +101,7 @@ function AppPage() {
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
+  const [validating, setValidating] = useState(false);
 
   const appendLog = useCallback((entry: Omit<JobLogEntry, "ts">) => {
     setLogs((prev) => [...prev, { ts: Date.now(), ...entry }]);
@@ -174,16 +176,28 @@ function AppPage() {
 
   const pick = useCallback(() => inputRef.current?.click(), []);
 
-  const onFile = (f: File | null | undefined) => {
+  const onFile = async (f: File | null | undefined) => {
     if (!f) return;
     if (!f.type.startsWith("video/")) return toast.error(t.err_file_type);
     if (f.size > MAX_BYTES) return toast.error(t.err_file_size);
-    setFile(f);
-    if (!name) setName(f.name.replace(/\.[^.]+$/, ""));
-    if (targetResume && fingerprintFile(f) === targetResume.fingerprint) {
-      setResume(targetResume);
-    } else {
-      setResume(null);
+    setValidating(true);
+    try {
+      const v = await validateUpload(f);
+      if (!v.ok) {
+        const msg = v.reasonKey ? t[v.reasonKey] : t.err_file_type;
+        toast.error(msg);
+        return;
+      }
+      setFile(f);
+      if (!name) setName(f.name.replace(/\.[^.]+$/, ""));
+      if (targetResume && fingerprintFile(f) === targetResume.fingerprint) {
+        setResume(targetResume);
+      } else {
+        setResume(null);
+      }
+      toast.success(`${t.validation_ok} · ${formatDuration(v.durationSec)} · ${v.width}×${v.height}`);
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -277,28 +291,64 @@ function AppPage() {
     }
     if (cursor < totalDuration) keeps.push({ start: cursor, end: totalDuration });
 
-    const { id } = await submitCloud({
-      data: {
-        sourceUrl: signed.signedUrl,
-        keeps,
-        resolution: exportOpts.resolution,
-        format: exportOpts.container,
-        fps: exportOpts.fps,
+    const submitArgs = {
+      sourceUrl: signed.signedUrl,
+      keeps,
+      resolution: exportOpts.resolution,
+      format: exportOpts.container,
+      fps: exportOpts.fps,
+    };
+    const { id } = await withBackoff(
+      (n) => {
+        appendLog({ level: "info", step: "export", message: `cloud submit · ${t.retry_attempt} ${n}` });
+        return submitCloud({ data: submitArgs });
       },
-    });
+      {
+        attempts: 3,
+        isRetriable: isTransientCloudError,
+        signal: () => !!controllerRef.current?.isCancelled(),
+        onAttempt: ({ attempt, delayMs, error }) => {
+          if (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            appendLog({
+              level: "warn",
+              step: "export",
+              message: `cloud submit failed (#${attempt}): ${msg}${delayMs ? ` · ${t.retry_waiting} ${Math.round(delayMs / 1000)}s` : ""}`,
+            });
+          }
+        },
+      },
+    );
     appendLog({ level: "info", step: "export", message: `cloud render submitted (id ${id})` });
 
     // Poll
     let url: string | undefined;
     let duration = 0;
     const startedAt = Date.now();
+    let pollFailures = 0;
     for (let i = 0; i < 400; i++) {
       if (controllerRef.current?.isCancelled()) throw new CancelledError();
       if (Date.now() - startedAt > CLOUD_TIMEOUT_MS) {
         throw new Error(t.cloud_timeout);
       }
       await new Promise((r) => setTimeout(r, 3000));
-      const r = await pollCloud({ data: { id } });
+      let r: Awaited<ReturnType<typeof pollCloud>>;
+      try {
+        r = await pollCloud({ data: { id } });
+        pollFailures = 0;
+      } catch (pollErr) {
+        pollFailures += 1;
+        const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+        appendLog({
+          level: "warn",
+          step: "export",
+          message: `cloud poll failed (#${pollFailures}): ${msg}`,
+        });
+        if (pollFailures >= 4 || !isTransientCloudError(pollErr)) throw pollErr;
+        // exponential backoff between consecutive failed polls
+        await new Promise((res) => setTimeout(res, Math.min(15_000, 1500 * 2 ** (pollFailures - 1))));
+        continue;
+      }
       setProgress(Math.min(95, 20 + i * 4));
       if (r.status === "done" && r.url) {
         url = r.url;
@@ -669,10 +719,9 @@ function AppPage() {
               />
               <OptionRow
                 checked={colorGrade}
-                onCheckedChange={(v) => { if (v) toast.info(t.coming_soon_msg); setColorGrade(v); }}
+                onCheckedChange={setColorGrade}
                 title={t.opt_color}
                 desc={t.opt_color_d}
-                comingSoon={t.coming_soon}
               />
             </div>
           </div>
@@ -760,8 +809,8 @@ function AppPage() {
         )}
 
         <div className="mt-10 flex justify-end">
-          <Button onClick={handleProcess} disabled={busy || !file} size="lg">
-            {busy ? t.processing : t.process}
+          <Button onClick={handleProcess} disabled={busy || !file || validating} size="lg">
+            {validating ? t.validating : busy ? t.processing : t.process}
           </Button>
         </div>
       </main>

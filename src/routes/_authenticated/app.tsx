@@ -1290,3 +1290,57 @@ function ErrorBanner({
     </div>
   );
 }
+
+function ValidationPanel({
+  t,
+  v,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  v: UploadValidation;
+}) {
+  const labels: Record<ValidationCheck["id"], string> = {
+    container: t.validation_check_container,
+    video_track: t.validation_check_video_track,
+    audio_track: t.validation_check_audio_track,
+    duration: t.validation_check_duration,
+    size: t.validation_check_size,
+    decode: t.validation_check_decode,
+  };
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {t.validation_panel_title}
+        </h2>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+            v.ok ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"
+          }`}
+        >
+          {v.ok ? "OK" : "Fail"}
+        </span>
+      </div>
+      <ul className="mt-3 divide-y divide-border/60 text-sm">
+        {v.checks.map((c) => (
+          <li key={c.id} className="flex items-center justify-between gap-3 py-2">
+            <div className="flex items-center gap-3">
+              <span
+                className={`grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold ${
+                  c.status === "pass"
+                    ? "bg-primary/20 text-primary"
+                    : c.status === "warn"
+                      ? "bg-amber-500/20 text-amber-400"
+                      : "bg-destructive/20 text-destructive"
+                }`}
+              >
+                {c.status === "pass" ? "✓" : c.status === "warn" ? "!" : "✕"}
+              </span>
+              <span className="text-foreground">{labels[c.id]}</span>
+            </div>
+            <span className="font-mono text-[11px] text-muted-foreground">{c.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

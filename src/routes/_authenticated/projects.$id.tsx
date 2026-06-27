@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
@@ -7,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { formatDuration } from "@/lib/ffmpeg-processor";
+import { enhanceAudioWithAI } from "@/lib/replicate.functions";
+import { explainCredits } from "@/lib/credits";
+import { mapError } from "@/lib/error-mapper";
 
 export const Route = createFileRoute("/_authenticated/projects/$id")({
   head: () => ({ meta: [{ title: "SilentCut — Projeto" }] }),
@@ -17,6 +21,10 @@ type ProjectStats = {
   removedSeconds?: number;
   originalDuration?: number;
   finalDuration?: number;
+  credits?: number;
+  cloud?: boolean;
+  logs?: { ts: number; level: string; step: string; message: string; durationMs?: number }[];
+  attempts?: number;
 };
 
 type Version = {
@@ -33,11 +41,13 @@ type Version = {
 
 function ProjectDetail() {
   const { id } = Route.useParams();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const enhanceFn = useServerFn(enhanceAudioWithAI);
   const [urls, setUrls] = useState<{ source?: string; output?: string }>({});
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
+  const [enhancing, setEnhancing] = useState(false);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -111,6 +121,91 @@ function ProjectDetail() {
     navigate({ to: "/app", search: { reprocess: v.id } });
   };
 
+  const activeVersion = useMemo(
+    () => (activeVersionId ? versions?.find((v) => v.id === activeVersionId) : null),
+    [versions, activeVersionId],
+  );
+  const activeStats: ProjectStats = (activeVersion?.stats as ProjectStats) ?? (project?.stats as ProjectStats) ?? {};
+
+  const handleEnhanceAudio = async () => {
+    if (!urls.output || !project) return;
+    setEnhancing(true);
+    try {
+      const { url } = await enhanceFn({ data: { audioUrl: urls.output } });
+      // Download enhanced audio and upload to storage as a new version asset.
+      const blob = await fetch(url).then((r) => r.blob());
+      const path = `${project.user_id}/${project.id}/ai-audio-${Date.now()}.wav`;
+      const { error: upErr } = await supabase.storage
+        .from("videos")
+        .upload(path, blob, { upsert: true, contentType: blob.type || "audio/wav" });
+      if (upErr) throw upErr;
+      const label = `ai-audio ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+      await supabase.from("project_versions" as never).insert({
+        project_id: project.id,
+        user_id: project.user_id,
+        label,
+        settings: { ai: "resemble-enhance" },
+        export_options: { container: "wav", resolution: "source" },
+        output_path: path,
+        stats: { ...activeStats, aiAudio: true },
+        status: "done",
+      } as never);
+      await qc.invalidateQueries({ queryKey: ["project-versions", id] });
+      toast.success(t.ai_enhance_done);
+    } catch (err) {
+      const mapped = mapError(err, lang);
+      toast.error(mapped.title, { description: mapped.action });
+    } finally {
+      setEnhancing(false);
+    }
+  };
+
+  const downloadCreditsReport = () => {
+    if (!project) return;
+    const payload = {
+      project: { id: project.id, name: project.name, created_at: project.created_at },
+      version: activeVersion?.label ?? "current",
+      stats: activeStats,
+      explanation: explainCredits(
+        {
+          cloud: !!activeStats.cloud,
+          resolution: (activeVersion?.export_options as { resolution?: string } | undefined)?.resolution as
+            | "source"
+            | "2160"
+            | "1440"
+            | "1080"
+            | "720"
+            | "480"
+            | undefined ?? "source",
+          estimatedDurationSec: activeStats.finalDuration,
+        },
+        lang,
+      ),
+      generatedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    triggerDownload(blob, `${project.name}-credits.json`);
+  };
+
+  const downloadLogs = () => {
+    if (!project) return;
+    const lines: string[] = [
+      `# ${project.name} — ${activeVersion?.label ?? "current"}`,
+      `# attempts: ${activeStats.attempts ?? 1}`,
+      "",
+    ];
+    for (const l of activeStats.logs ?? []) {
+      const ts = new Date(l.ts).toISOString();
+      const dur = typeof l.durationMs === "number" ? ` (${(l.durationMs / 1000).toFixed(2)}s)` : "";
+      lines.push(`${ts}  [${l.level.toUpperCase()}] [${l.step}] ${l.message}${dur}`);
+    }
+    if ((activeStats.logs ?? []).length === 0) {
+      lines.push("No log entries were stored for this version.");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    triggerDownload(blob, `${project.name}-logs.txt`);
+  };
+
   const stats = (project?.stats ?? {}) as ProjectStats;
 
   return (
@@ -150,6 +245,25 @@ function ProjectDetail() {
               </div>
             ) : null}
 
+            {project.status === "done" && urls.output && (
+              <PublicStatusPanel
+                t={t}
+                completedAt={project.updated_at ?? project.created_at}
+                downloadUrl={urls.output}
+                fileName={`${project.name}.${(activeVersion?.export_options as { container?: string } | undefined)?.container ?? "mp4"}`}
+                onDownloadLogs={downloadLogs}
+                onDownloadReport={downloadCreditsReport}
+              />
+            )}
+
+            {project.status === "done" && urls.output && (
+              <AIEnhanceCard
+                t={t}
+                busy={enhancing}
+                onRun={handleEnhanceAudio}
+              />
+            )}
+
             <SideBySide t={t} source={urls.source} output={urls.output} />
 
             <VersionHistory
@@ -165,6 +279,83 @@ function ProjectDetail() {
         )}
       </main>
     </div>
+  );
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function PublicStatusPanel({
+  t,
+  completedAt,
+  downloadUrl,
+  fileName,
+  onDownloadLogs,
+  onDownloadReport,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  completedAt: string;
+  downloadUrl: string;
+  fileName: string;
+  onDownloadLogs: () => void;
+  onDownloadReport: () => void;
+}) {
+  return (
+    <section className="mt-8 rounded-xl border border-primary/30 bg-primary/5 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-primary">
+            {t.status_public_title}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t.status_completed_at} {new Date(completedAt).toLocaleString()}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild size="sm">
+            <a href={downloadUrl} download={fileName}>{t.status_download_result}</a>
+          </Button>
+          <Button variant="outline" size="sm" onClick={onDownloadReport}>
+            {t.status_download_report}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onDownloadLogs}>
+            {t.status_view_logs}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AIEnhanceCard({
+  t,
+  busy,
+  onRun,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  busy: boolean;
+  onRun: () => void;
+}) {
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">{t.ai_enhance_title}</div>
+          <p className="mt-1 text-xs text-muted-foreground">{t.ai_enhance_desc}</p>
+        </div>
+        <Button onClick={onRun} disabled={busy} size="sm">
+          {busy ? t.ai_enhance_running : t.ai_enhance_run}
+        </Button>
+      </div>
+    </section>
   );
 }
 

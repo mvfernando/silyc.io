@@ -37,6 +37,7 @@ import {
   type StepKey as ResumeStepKey,
 } from "@/lib/resume-store";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
+import { mapError, type MappedError } from "@/lib/error-mapper";
 
 const MAX_BYTES = 220 * 1024 * 1024;
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
@@ -94,6 +95,7 @@ function AppPage() {
   const stepStartRef = useRef<Record<string, number>>({});
   const attemptsRef = useRef<number>(0);
   const lastPhaseRef = useRef<typeof phase>("idle");
+  const [lastError, setLastError] = useState<MappedError | null>(null);
 
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);
@@ -539,7 +541,7 @@ function AppPage() {
         settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, cloud },
         export_options: exportOpts as unknown as Record<string, unknown>,
         output_path: outPath,
-        stats,
+        stats: { ...stats, logs: logs.slice(-200), attempts: attemptsRef.current },
         status: "done",
       } as never);
 
@@ -564,9 +566,10 @@ function AppPage() {
       } else {
         console.error(err);
         await supabase.from("projects").update({ status: "error" }).eq("id", projectId!);
-        const msg = err instanceof Error ? err.message : t.err_generic;
-        appendLog({ level: "error", step: "system", message: msg });
-        toast.error(msg);
+        const mapped = mapError(err, lang);
+        appendLog({ level: "error", step: "system", message: `${mapped.title} — ${mapped.raw}` });
+        setLastError(mapped);
+        toast.error(mapped.title, { description: mapped.action });
       }
       setBusy(false);
       setPaused(false);
@@ -603,6 +606,10 @@ function AppPage() {
               toast.message(t.resume_discard);
             }}
           />
+        )}
+
+        {lastError && (
+          <ErrorBanner t={t} error={lastError} onDismiss={() => setLastError(null)} />
         )}
 
         <div
@@ -653,10 +660,12 @@ function AppPage() {
               />
               <OptionRow
                 checked={enhanceAudio}
-                onCheckedChange={(v) => { if (v) toast.info(t.coming_soon_msg); setEnhanceAudio(v); }}
+                onCheckedChange={(v) => {
+                  setEnhanceAudio(v);
+                  if (v) toast.info(t.ai_enhance_desc);
+                }}
                 title={t.opt_audio}
                 desc={t.opt_audio_d}
-                comingSoon={t.coming_soon}
               />
               <OptionRow
                 checked={colorGrade}
@@ -1132,6 +1141,7 @@ type ExportHistoryRow = {
 };
 
 function ExportsHistoryPanel({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<ExportHistoryRow[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -1174,11 +1184,55 @@ function ExportsHistoryPanel({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
                 <div className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
                   {credits === 0 ? "0 cr" : `${credits} cr`}
                 </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate({ to: "/app", search: { reprocess: r.id } })}
+                >
+                  {t.versions_reprocess}
+                </Button>
               </li>
             );
           })}
         </ul>
       )}
     </section>
+  );
+}
+
+function ErrorBanner({
+  t,
+  error,
+  onDismiss,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  error: MappedError;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="mt-6 rounded-xl border border-destructive/40 bg-destructive/10 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-destructive">
+            {error.title}
+          </div>
+          <p className="mt-2 text-sm text-foreground">
+            <span className="font-medium">{t.err_cause}: </span>
+            {error.cause}
+          </p>
+          <p className="mt-1 text-sm text-foreground">
+            <span className="font-medium">{t.err_action}: </span>
+            {error.action}
+          </p>
+          <details className="mt-3 text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none">{t.err_details}</summary>
+            <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[11px]">{error.raw}</pre>
+          </details>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onDismiss}>
+          {t.err_dismiss}
+        </Button>
+      </div>
+    </div>
   );
 }

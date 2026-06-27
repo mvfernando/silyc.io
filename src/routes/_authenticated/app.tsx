@@ -37,6 +37,7 @@ import {
   type StepKey as ResumeStepKey,
 } from "@/lib/resume-store";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
+import { mapError, type MappedError } from "@/lib/error-mapper";
 
 const MAX_BYTES = 220 * 1024 * 1024;
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
@@ -94,6 +95,7 @@ function AppPage() {
   const stepStartRef = useRef<Record<string, number>>({});
   const attemptsRef = useRef<number>(0);
   const lastPhaseRef = useRef<typeof phase>("idle");
+  const [lastError, setLastError] = useState<MappedError | null>(null);
 
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);
@@ -539,7 +541,7 @@ function AppPage() {
         settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, cloud },
         export_options: exportOpts as unknown as Record<string, unknown>,
         output_path: outPath,
-        stats,
+        stats: { ...stats, logs: logs.slice(-200), attempts: attemptsRef.current },
         status: "done",
       } as never);
 
@@ -564,9 +566,10 @@ function AppPage() {
       } else {
         console.error(err);
         await supabase.from("projects").update({ status: "error" }).eq("id", projectId!);
-        const msg = err instanceof Error ? err.message : t.err_generic;
-        appendLog({ level: "error", step: "system", message: msg });
-        toast.error(msg);
+        const mapped = mapError(err, lang);
+        appendLog({ level: "error", step: "system", message: `${mapped.title} — ${mapped.raw}` });
+        setLastError(mapped);
+        toast.error(mapped.title, { description: mapped.action });
       }
       setBusy(false);
       setPaused(false);
@@ -603,6 +606,10 @@ function AppPage() {
               toast.message(t.resume_discard);
             }}
           />
+        )}
+
+        {lastError && (
+          <ErrorBanner t={t} error={lastError} onDismiss={() => setLastError(null)} />
         )}
 
         <div
@@ -653,10 +660,12 @@ function AppPage() {
               />
               <OptionRow
                 checked={enhanceAudio}
-                onCheckedChange={(v) => { if (v) toast.info(t.coming_soon_msg); setEnhanceAudio(v); }}
+                onCheckedChange={(v) => {
+                  setEnhanceAudio(v);
+                  if (v) toast.info(t.ai_enhance_desc);
+                }}
                 title={t.opt_audio}
                 desc={t.opt_audio_d}
-                comingSoon={t.coming_soon}
               />
               <OptionRow
                 checked={colorGrade}

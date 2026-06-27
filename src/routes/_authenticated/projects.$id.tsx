@@ -13,6 +13,7 @@ import { startEnhanceAudio, pollEnhanceAudio, cancelEnhanceAudio } from "@/lib/r
 import { explainCredits } from "@/lib/credits";
 import { mapError } from "@/lib/error-mapper";
 import { PreviewModal } from "@/components/preview-modal";
+import { SilenceTimeline } from "@/components/silence-timeline";
 
 export const Route = createFileRoute("/_authenticated/projects/$id")({
   head: () => ({ meta: [{ title: "SilentCut — Projeto" }] }),
@@ -27,6 +28,8 @@ type ProjectStats = {
   cloud?: boolean;
   logs?: { ts: number; level: string; step: string; message: string; durationMs?: number }[];
   attempts?: number;
+  silences?: { start: number; end: number }[];
+  silenceCount?: number;
 };
 
 type Version = {

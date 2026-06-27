@@ -147,7 +147,11 @@ function ProjectDetail() {
         .eq("id", project.id);
       if (error) throw error;
       setActiveVersionId(null);
-      await qc.invalidateQueries({ queryKey: ["project", id] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["project", id] }),
+        qc.invalidateQueries({ queryKey: ["project-versions", id] }),
+        qc.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
       toast.success(t.versions_restore, {
         action: {
           label: t.preview_open,
@@ -200,7 +204,10 @@ function ProjectDetail() {
         stats: { ...activeStats, aiAudio: true },
         status: "done",
       } as never);
-      await qc.invalidateQueries({ queryKey: ["project-versions", id] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["project-versions", id] }),
+        qc.invalidateQueries({ queryKey: ["project", id] }),
+      ]);
       toast.success(t.ai_enhance_done, {
         action: {
           label: t.view_versions,

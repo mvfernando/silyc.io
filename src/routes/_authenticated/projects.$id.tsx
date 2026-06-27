@@ -767,6 +767,8 @@ function AIEnhanceCard({
   error,
   onRun,
   progress,
+  onCancel,
+  canceling,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   busy: boolean;
@@ -777,7 +779,10 @@ function AIEnhanceCard({
     percent: number;
     attempt: number;
     maxAttempts: number;
+    startedAt: number;
   } | null;
+  onCancel: () => void;
+  canceling: boolean;
 }) {
   const phaseLabel = progress
     ? progress.phase === "queued"
@@ -786,6 +791,16 @@ function AIEnhanceCard({
         ? t.audio_progress_processing
         : t.audio_progress_finalizing
     : null;
+  const elapsedSec = progress ? Math.max(0.1, (Date.now() - progress.startedAt) / 1000) : 0;
+  const speed = progress ? progress.percent / elapsedSec : 0; // %/s
+  const remainingPct = progress ? Math.max(0, 100 - progress.percent) : 0;
+  const etaSec = progress && speed > 0 ? Math.round(remainingPct / speed) : null;
+  const etaLabel =
+    etaSec === null
+      ? "—"
+      : etaSec >= 60
+        ? `${Math.floor(etaSec / 60)}m ${etaSec % 60}s`
+        : `${etaSec}s`;
   return (
     <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -794,11 +809,25 @@ function AIEnhanceCard({
           <p className="mt-1 text-xs text-muted-foreground">{t.ai_enhance_desc}</p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Button onClick={onRun} disabled={busy} aria-busy={busy} size="sm">
-            {busy && <Spinner className="mr-2" />}
-            {busy ? t.ai_enhance_running : t.ai_enhance_run}
-            {busy && <span className="sr-only"> — {t.sr_busy}</span>}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={onRun} disabled={busy} aria-busy={busy} size="sm">
+              {busy && <Spinner className="mr-2" />}
+              {busy ? t.ai_enhance_running : t.ai_enhance_run}
+              {busy && <span className="sr-only"> — {t.sr_busy}</span>}
+            </Button>
+            {busy && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCancel}
+                disabled={canceling}
+                aria-busy={canceling}
+              >
+                {canceling && <Spinner className="mr-2" />}
+                {canceling ? t.audio_canceling : t.audio_cancel}
+              </Button>
+            )}
+          </div>
           {error && !busy && (
             <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
               <span>{t.failed}: {error}</span>
@@ -828,6 +857,10 @@ function AIEnhanceCard({
               className="h-full rounded-full bg-primary transition-[width] duration-500"
               style={{ width: `${progress.percent}%` }}
             />
+          </div>
+          <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="tabular-nums">{t.audio_eta}: {etaLabel}</span>
+            <span className="tabular-nums">{t.audio_speed}: {speed.toFixed(1)} %/s</span>
           </div>
         </div>
       )}

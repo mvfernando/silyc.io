@@ -699,6 +699,8 @@ function ProjectDetail() {
                 error={enhanceError}
                 onRun={handleEnhanceAudio}
                 progress={enhanceProgress}
+                onCancel={handleCancelEnhance}
+                canceling={canceling}
               />
             )}
 
@@ -718,9 +720,9 @@ function ProjectDetail() {
               restoreError={restoreError}
             />
 
-            <ActivityPanel t={t} events={activity} />
+            <ActivityPanel t={t} events={activity} onExport={exportActivity} />
 
-            <AudioJobsHistory t={t} jobs={audioJobs} />
+            <AudioJobsHistory t={t} jobs={audioJobs} onExport={exportAudioJobs} />
           </>
         )}
       </main>

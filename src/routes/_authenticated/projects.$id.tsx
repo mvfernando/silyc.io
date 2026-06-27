@@ -495,7 +495,7 @@ const VideoPanel = ({
 );
 
 function VersionHistory({
-  t, versions, currentOutputPath, activeId, onPreview, onSetCurrent, onReprocess,
+  t, versions, currentOutputPath, activeId, onPreview, onSetCurrent, onReprocess, restoringId,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   versions: Version[];
@@ -504,6 +504,7 @@ function VersionHistory({
   onPreview: (id: string | null) => void;
   onSetCurrent: (v: Version) => void;
   onReprocess: (v: Version) => void;
+  restoringId?: string | null;
 }) {
   return (
     <section className="mt-12">
@@ -542,7 +543,13 @@ function VersionHistory({
                     {isActive ? "Preview off" : "Preview"}
                   </Button>
                   {!isCurrent && (
-                    <Button variant="outline" size="sm" onClick={() => onSetCurrent(v)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onSetCurrent(v)}
+                      disabled={restoringId === v.id}
+                    >
+                      {restoringId === v.id && <Spinner className="mr-2" />}
                       {t.versions_restore}
                     </Button>
                   )}

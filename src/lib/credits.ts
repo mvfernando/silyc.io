@@ -45,3 +45,28 @@ export function actualCloudCredits(durationSec: number, exportOpts: ExportOption
   const rate = CLOUD_PER_MINUTE[exportOpts.resolution] ?? 1.6;
   return Math.round(minutes * rate * 10) / 10;
 }
+
+export function creditRateFor(resolution: ExportOptions["resolution"]): number {
+  return CLOUD_PER_MINUTE[resolution] ?? 1.6;
+}
+
+export function explainCredits(
+  opts: { cloud: boolean; resolution: ExportOptions["resolution"]; estimatedDurationSec?: number; fileSizeBytes?: number },
+  lang: "pt" | "en",
+): string {
+  if (!opts.cloud) {
+    return lang === "pt"
+      ? "Processamento local no navegador via FFmpeg.wasm — não consome créditos."
+      : "Local processing in the browser via FFmpeg.wasm — does not consume credits.";
+  }
+  const rate = creditRateFor(opts.resolution);
+  const sec =
+    opts.estimatedDurationSec ??
+    Math.max(30, Math.round((opts.fileSizeBytes ?? 0) / (1024 * 1024) * 6));
+  const minutes = (sec / 60).toFixed(1);
+  const label = opts.resolution === "source" ? (lang === "pt" ? "fonte" : "source") : `${opts.resolution}p`;
+  if (lang === "pt") {
+    return `Renderização em nuvem (Shotstack): ${rate} cr por minuto a ${label}. Estimativa = ${minutes} min × ${rate} cr.`;
+  }
+  return `Cloud rendering (Shotstack): ${rate} cr per minute at ${label}. Estimate = ${minutes} min × ${rate} cr.`;
+}

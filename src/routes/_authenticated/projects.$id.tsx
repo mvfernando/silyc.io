@@ -53,6 +53,9 @@ function ProjectDetail() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<{ id: string; msg: string } | null>(null);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
   const openPreview = () => {
@@ -111,32 +114,56 @@ function ProjectDetail() {
   const handleDelete = async () => {
     if (!project) return;
     setDeleting(true);
+    setDeleteError(null);
     const versionPaths = (versions ?? []).map((v) => v.output_path).filter(Boolean) as string[];
     const paths = [project.source_path, project.output_path, ...versionPaths].filter(Boolean) as string[];
-    if (paths.length) await supabase.storage.from("videos").remove(paths);
-    const { error } = await supabase.from("projects").delete().eq("id", project.id);
-    if (error) {
+    try {
+      if (paths.length) await supabase.storage.from("videos").remove(paths);
+      const { error } = await supabase.from("projects").delete().eq("id", project.id);
+      if (error) throw error;
+      toast.success(t.deleted, {
+        action: { label: t.nav_projects, onClick: () => navigate({ to: "/projects" }) },
+      });
+      navigate({ to: "/projects" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t.err_delete;
+      setDeleteError(msg);
+      toast.error(t.err_delete, {
+        description: msg,
+        action: { label: t.try_again, onClick: () => handleDelete() },
+      });
       setDeleting(false);
-      return toast.error(error.message);
     }
-    navigate({ to: "/projects" });
   };
 
   const setAsCurrent = async (v: Version) => {
     if (!project || !v.output_path) return;
     setRestoringId(v.id);
-    const { error } = await supabase
-      .from("projects")
-      .update({ output_path: v.output_path, stats: v.stats as never })
-      .eq("id", project.id);
-    if (error) {
+    setRestoreError(null);
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ output_path: v.output_path, stats: v.stats as never })
+        .eq("id", project.id);
+      if (error) throw error;
+      setActiveVersionId(null);
+      await qc.invalidateQueries({ queryKey: ["project", id] });
+      toast.success(t.versions_restore, {
+        action: {
+          label: t.preview_open,
+          onClick: () => openPreview(),
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t.err_restore;
+      setRestoreError({ id: v.id, msg });
+      toast.error(t.err_restore, {
+        description: msg,
+        action: { label: t.try_again, onClick: () => setAsCurrent(v) },
+      });
+    } finally {
       setRestoringId(null);
-      return toast.error(error.message);
     }
-    setActiveVersionId(null);
-    await qc.invalidateQueries({ queryKey: ["project", id] });
-    setRestoringId(null);
-    toast.success(t.versions_restore);
   };
 
   const reprocess = (v: Version) => {
@@ -152,6 +179,7 @@ function ProjectDetail() {
   const handleEnhanceAudio = async () => {
     if (!urls.output || !project) return;
     setEnhancing(true);
+    setEnhanceError(null);
     try {
       const { url } = await enhanceFn({ data: { audioUrl: urls.output } });
       // Download enhanced audio and upload to storage as a new version asset.
@@ -173,10 +201,23 @@ function ProjectDetail() {
         status: "done",
       } as never);
       await qc.invalidateQueries({ queryKey: ["project-versions", id] });
-      toast.success(t.ai_enhance_done);
+      toast.success(t.ai_enhance_done, {
+        action: {
+          label: t.view_versions,
+          onClick: () => {
+            document
+              .getElementById("version-history")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          },
+        },
+      });
     } catch (err) {
       const mapped = mapError(err, lang);
-      toast.error(mapped.title, { description: mapped.action });
+      setEnhanceError(mapped.title);
+      toast.error(mapped.title, {
+        description: mapped.action,
+        action: { label: t.try_again, onClick: () => handleEnhanceAudio() },
+      });
     } finally {
       setEnhancing(false);
     }

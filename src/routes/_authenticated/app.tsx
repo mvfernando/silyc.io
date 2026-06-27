@@ -600,8 +600,14 @@ function AppPage() {
       } as never);
 
       clearResume(projectId!);
-      toast.success(`−${formatDuration(stats.removedSeconds)} ${t.proj_saved}`);
-      navigate({ to: "/projects/$id", params: { id: projectId! } });
+      const finishedId = projectId!;
+      toast.success(`−${formatDuration(stats.removedSeconds)} ${t.proj_saved}`, {
+        action: {
+          label: t.view_project,
+          onClick: () => navigate({ to: "/projects/$id", params: { id: finishedId } }),
+        },
+      });
+      navigate({ to: "/projects/$id", params: { id: finishedId } });
     } catch (err: unknown) {
       const cancelled = err instanceof CancelledError || controller.isCancelled();
       const lastPhase = phase as string;

@@ -580,6 +580,7 @@ function AppPage() {
         finalDuration,
         removedSeconds: Math.max(0, originalDuration - finalDuration),
         silenceCount: detected.length,
+        silences: detected,
         credits,
         cloud,
       };

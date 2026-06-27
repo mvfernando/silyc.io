@@ -306,6 +306,7 @@ function ProjectDetail() {
               onPreview={setActiveVersionId}
               onSetCurrent={setAsCurrent}
               onReprocess={reprocess}
+              restoringId={restoringId}
             />
           </>
         )}

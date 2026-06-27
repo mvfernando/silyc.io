@@ -25,16 +25,21 @@ import {
   type SilenceRange,
 } from "@/lib/ffmpeg-processor";
 import { actualCloudCredits, estimateCredits } from "@/lib/credits";
+import { explainCredits } from "@/lib/credits";
 import {
   clearResume,
   fingerprintFile,
   listResume,
+  lastPhaseToCompletedSteps,
   saveResume,
+  type JobLogEntry,
   type ResumeState,
+  type StepKey as ResumeStepKey,
 } from "@/lib/resume-store";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 
 const MAX_BYTES = 220 * 1024 * 1024;
+const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
 type SearchParams = { reprocess?: string; resume?: string };
 
@@ -61,7 +66,7 @@ const CLOUD_ENV: "sandbox" | "production" =
   import.meta.env.MODE === "production" ? "production" : "sandbox";
 
 function AppPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const search = useSearch({ from: "/_authenticated/app" });
   const inputRef = useRef<HTMLInputElement>(null);
@@ -85,10 +90,46 @@ function AppPage() {
   const [paused, setPaused] = useState(false);
   const [actualCredits, setActualCredits] = useState<number | null>(null);
   const controllerRef = useRef<Controller | null>(null);
+  const [logs, setLogs] = useState<JobLogEntry[]>([]);
+  const stepStartRef = useRef<Record<string, number>>({});
+  const attemptsRef = useRef<number>(0);
+  const lastPhaseRef = useRef<typeof phase>("idle");
 
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
+
+  const appendLog = useCallback((entry: Omit<JobLogEntry, "ts">) => {
+    setLogs((prev) => [...prev, { ts: Date.now(), ...entry }]);
+  }, []);
+
+  const markPhase = useCallback(
+    (next: typeof phase) => {
+      const prev = lastPhaseRef.current;
+      if (prev !== next && prev !== "idle") {
+        const started = stepStartRef.current[prev as string];
+        if (started) {
+          appendLog({
+            level: "info",
+            step: (PHASE_TO_STEP[prev as ProgressEvent["phase"]] ?? "export") as StepKey,
+            message: `${prev} finished`,
+            durationMs: Date.now() - started,
+          });
+        }
+      }
+      if (next !== prev) {
+        stepStartRef.current[next as string] = Date.now();
+        appendLog({
+          level: "info",
+          step: (PHASE_TO_STEP[next as ProgressEvent["phase"]] ?? "export") as StepKey,
+          message: `entered ${next}`,
+        });
+      }
+      lastPhaseRef.current = next;
+      setPhase(next);
+    },
+    [appendLog],
+  );
 
   // Pre-fill from reprocess request
   useEffect(() => {
@@ -125,6 +166,8 @@ function AppPage() {
     setExportOpts({ ...defaultExportOptions, ...targetResume.exportOpts });
     setName(targetResume.projectName);
     setCloud(!!targetResume.cloud);
+    if (targetResume.logs?.length) setLogs(targetResume.logs);
+    attemptsRef.current = targetResume.attempts ?? 0;
   }, [targetResume]);
 
   const pick = useCallback(() => inputRef.current?.click(), []);
@@ -188,6 +231,7 @@ function AppPage() {
     f: File,
     extra: Partial<ResumeState> = {},
   ) => {
+    const lastPhase = (extra.lastPhase ?? lastPhaseRef.current ?? "load") as string;
     saveResume({
       projectId,
       projectName: name || f.name,
@@ -196,7 +240,10 @@ function AppPage() {
       fileSize: f.size,
       settings: { threshold, minPause, removeSilence },
       exportOpts,
-      lastPhase: "load",
+      lastPhase,
+      completedSteps: lastPhaseToCompletedSteps(lastPhase),
+      logs: logs.slice(-200),
+      attempts: attemptsRef.current,
       cloud,
       savedAt: Date.now(),
       ...extra,
@@ -208,8 +255,9 @@ function AppPage() {
     totalDuration: number,
     sourcePath: string,
   ): Promise<{ blob: Blob; mime: string; ext: string; duration: number }> => {
-    setPhase("cloud");
+    markPhase("cloud");
     setProgress(0);
+    appendLog({ level: "info", step: "export", message: "cloud render: signing source URL" });
     const { data: signed } = await supabase.storage
       .from("videos")
       .createSignedUrl(sourcePath, 60 * 60);
@@ -236,12 +284,17 @@ function AppPage() {
         fps: exportOpts.fps,
       },
     });
+    appendLog({ level: "info", step: "export", message: `cloud render submitted (id ${id})` });
 
     // Poll
     let url: string | undefined;
     let duration = 0;
-    for (let i = 0; i < 200; i++) {
+    const startedAt = Date.now();
+    for (let i = 0; i < 400; i++) {
       if (controllerRef.current?.isCancelled()) throw new CancelledError();
+      if (Date.now() - startedAt > CLOUD_TIMEOUT_MS) {
+        throw new Error(t.cloud_timeout);
+      }
       await new Promise((r) => setTimeout(r, 3000));
       const r = await pollCloud({ data: { id } });
       setProgress(Math.min(95, 20 + i * 4));
@@ -270,8 +323,14 @@ function AppPage() {
     setBusy(true);
     setProgress(0);
     setActualCredits(null);
-    setPhase("load");
+    markPhase("load");
     setPaused(false);
+    attemptsRef.current += 1;
+    appendLog({
+      level: "info",
+      step: "system",
+      message: `attempt #${attemptsRef.current} · ${cloud ? "cloud" : "local"} · ${file.name}`,
+    });
 
     const controller = createController();
     controllerRef.current = controller;
@@ -320,7 +379,7 @@ function AppPage() {
     const sourcePath = `${userId}/${projectId}/source.${ext}`;
 
     try {
-      setPhase("upload");
+      markPhase("upload");
       const { error: upErr } = await supabase.storage.from("videos").upload(sourcePath, file, {
         upsert: true,
         contentType: file.type,
@@ -347,11 +406,16 @@ function AppPage() {
             exportOptions: exportOpts,
             controller,
             onProgress: (e) => {
-              setPhase(e.phase);
+              markPhase(e.phase);
               if ("progress" in e) setProgress(Math.round(e.progress * 100));
             },
             onDetectionComplete: ({ silences, totalDuration }) => {
               detectionCacheRef.current = { silences, duration: totalDuration };
+              appendLog({
+                level: "info",
+                step: "silences",
+                message: `detected ${silences.length} silence ranges`,
+              });
               persistResume(projectId!, file, {
                 silences,
                 totalDuration,
@@ -367,11 +431,42 @@ function AppPage() {
         }
         detected = silences;
         originalDuration = totalDuration;
-        const cr = await runCloudRender(silences, totalDuration, sourcePath);
-        outputBlob = cr.blob;
-        outputMime = cr.mime;
-        outputExt = cr.ext;
-        finalDuration = cr.duration;
+        try {
+          const cr = await runCloudRender(silences, totalDuration, sourcePath);
+          outputBlob = cr.blob;
+          outputMime = cr.mime;
+          outputExt = cr.ext;
+          finalDuration = cr.duration;
+        } catch (cloudErr) {
+          if (cloudErr instanceof CancelledError) throw cloudErr;
+          const msg = cloudErr instanceof Error ? cloudErr.message : String(cloudErr);
+          appendLog({ level: "warn", step: "export", message: `cloud failed: ${msg}` });
+          appendLog({ level: "info", step: "system", message: t.fallback_msg });
+          toast.message(t.fallback_title, { description: t.fallback_msg });
+          persistResume(projectId!, file, {
+            silences,
+            totalDuration,
+            lastPhase: "detect",
+          });
+          const local = await processVideoRemoveSilence(file, {
+            thresholdDb: threshold,
+            minPauseSec: minPause,
+            exportOptions: exportOpts,
+            controller,
+            cachedSilences: silences,
+            cachedDuration: totalDuration,
+            onProgress: (e) => {
+              markPhase(e.phase);
+              if ("progress" in e) setProgress(Math.round(e.progress * 100));
+            },
+          });
+          outputBlob = local.outputBlob;
+          outputMime = local.outputMime;
+          outputExt = local.outputExt;
+          finalDuration = local.finalDuration;
+          // mark this version as a fallback (local) one
+          setCloud(false);
+        }
       } else {
         const result = await processVideoRemoveSilence(file, {
           thresholdDb: threshold,
@@ -382,6 +477,11 @@ function AppPage() {
           cachedDuration: resume?.totalDuration,
           onDetectionComplete: ({ silences, totalDuration }) => {
             detectionCacheRef.current = { silences, duration: totalDuration };
+            appendLog({
+              level: "info",
+              step: "silences",
+              message: `detected ${silences.length} silence ranges`,
+            });
             persistResume(projectId!, file, {
               silences,
               totalDuration,
@@ -389,7 +489,7 @@ function AppPage() {
             });
           },
           onProgress: (e) => {
-            setPhase(e.phase);
+            markPhase(e.phase);
             if ("progress" in e) setProgress(Math.round(e.progress * 100));
           },
         });
@@ -402,7 +502,7 @@ function AppPage() {
       }
 
       if (controller.isCancelled()) throw new CancelledError();
-      setPhase("upload");
+      markPhase("upload");
       const outPath = `${userId}/${projectId}/v-${Date.now()}.${outputExt}`;
       const { error: outErr } = await supabase.storage
         .from("videos")
@@ -411,6 +511,11 @@ function AppPage() {
 
       const credits = cloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
       setActualCredits(credits);
+      appendLog({
+        level: "info",
+        step: "export",
+        message: `output uploaded · ${credits} cr used`,
+      });
 
       const stats = {
         originalDuration,
@@ -454,11 +559,13 @@ function AppPage() {
       }
       if (cancelled) {
         await supabase.from("projects").update({ status: "cancelled" }).eq("id", projectId!);
+        appendLog({ level: "warn", step: "system", message: "job cancelled by user" });
         toast.message(t.cancelled);
       } else {
         console.error(err);
         await supabase.from("projects").update({ status: "error" }).eq("id", projectId!);
         const msg = err instanceof Error ? err.message : t.err_generic;
+        appendLog({ level: "error", step: "system", message: msg });
         toast.error(msg);
       }
       setBusy(false);
@@ -491,6 +598,8 @@ function AppPage() {
             onDiscard={() => {
               clearResume(targetResume.projectId);
               setResume(null);
+              setLogs([]);
+              attemptsRef.current = 0;
               toast.message(t.resume_discard);
             }}
           />
@@ -593,6 +702,24 @@ function AppPage() {
           estimate={estimate.credits}
           detail={estimate.detail}
           actual={actualCredits}
+          explanation={explainCredits(
+            {
+              cloud,
+              resolution: exportOpts.resolution,
+              estimatedDurationSec: resume?.totalDuration,
+              fileSizeBytes: file?.size,
+            },
+            lang,
+          )}
+        />
+
+        <ExportsHistoryPanel t={t} />
+
+        <JobLogsPanel
+          t={t}
+          logs={logs}
+          attempts={attemptsRef.current}
+          onClear={() => setLogs([])}
         />
 
         {busy && (

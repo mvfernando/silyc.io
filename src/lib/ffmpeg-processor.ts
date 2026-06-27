@@ -147,6 +147,11 @@ export type ProcessOptions = {
   controller?: Controller;
   onProgress?: (e: ProgressEvent) => void;
   onLog?: (msg: string) => void;
+  // Resume: skip silence detection by reusing previous output.
+  cachedSilences?: SilenceRange[];
+  cachedDuration?: number;
+  // When provided, called when detection completes, before encoding starts.
+  onDetectionComplete?: (data: { silences: SilenceRange[]; totalDuration: number }) => void;
 };
 
 export type ProcessResult = {
@@ -168,6 +173,9 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
     onLog,
     controller,
     exportOptions = defaultExportOptions,
+    cachedSilences,
+    cachedDuration,
+    onDetectionComplete,
   } = opts;
   const ffmpeg = await loadFFmpeg(onLog);
   onProgress?.({ phase: "load", progress: 1 });
@@ -178,31 +186,36 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
   onProgress?.({ phase: "probe", progress: 0.3 });
   await waitWhilePaused(controller);
 
-  // First pass: detect silences. Capture logs.
-  let logBuf = "";
-  const logHandler = ({ message }: { message: string }) => {
-    logBuf += message + "\n";
-  };
-  ffmpeg.on("log", logHandler);
-
-  await ffmpeg.exec([
-    "-i",
-    inputName,
-    "-af",
-    `silencedetect=noise=${thresholdDb}dB:d=${minPauseSec}`,
-    "-f",
-    "null",
-    "-",
-  ]);
-  ffmpeg.off("log", logHandler);
-  if (controller?.isCancelled()) throw new CancelledError();
-
-  const durMatch = logBuf.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
-  const totalDuration = durMatch
-    ? parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseFloat(durMatch[3])
-    : 0;
-
-  const silences = parseSilenceLog(logBuf, totalDuration);
+  let silences: SilenceRange[];
+  let totalDuration: number;
+  if (cachedSilences && typeof cachedDuration === "number") {
+    silences = cachedSilences;
+    totalDuration = cachedDuration;
+    onProgress?.({ phase: "detect", progress: 1 });
+  } else {
+    let logBuf = "";
+    const logHandler = ({ message }: { message: string }) => {
+      logBuf += message + "\n";
+    };
+    ffmpeg.on("log", logHandler);
+    await ffmpeg.exec([
+      "-i",
+      inputName,
+      "-af",
+      `silencedetect=noise=${thresholdDb}dB:d=${minPauseSec}`,
+      "-f",
+      "null",
+      "-",
+    ]);
+    ffmpeg.off("log", logHandler);
+    if (controller?.isCancelled()) throw new CancelledError();
+    const durMatch = logBuf.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+    totalDuration = durMatch
+      ? parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseFloat(durMatch[3])
+      : 0;
+    silences = parseSilenceLog(logBuf, totalDuration);
+    onDetectionComplete?.({ silences, totalDuration });
+  }
   const keeps = invertRanges(silences, totalDuration, paddingSec);
   onProgress?.({ phase: "detect", progress: 1 });
   await waitWhilePaused(controller);

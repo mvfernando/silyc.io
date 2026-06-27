@@ -816,6 +816,7 @@ function AppPage() {
 
         <div className="mt-10 flex justify-end">
           <Button onClick={handleProcess} disabled={busy || !file || validating} size="lg">
+            {(validating || busy) && <Spinner className="mr-2" />}
             {validating ? t.validating : busy ? t.processing : t.process}
           </Button>
         </div>

@@ -723,12 +723,26 @@ function AIEnhanceCard({
   busy,
   error,
   onRun,
+  progress,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   busy: boolean;
   error: string | null;
   onRun: () => void;
+  progress: {
+    phase: "queued" | "processing" | "finalizing";
+    percent: number;
+    attempt: number;
+    maxAttempts: number;
+  } | null;
 }) {
+  const phaseLabel = progress
+    ? progress.phase === "queued"
+      ? t.audio_progress_queued
+      : progress.phase === "processing"
+        ? t.audio_progress_processing
+        : t.audio_progress_finalizing
+    : null;
   return (
     <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -752,6 +766,112 @@ function AIEnhanceCard({
           )}
         </div>
       </div>
+      {progress && (
+        <div className="mt-4" aria-live="polite">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>
+              {phaseLabel} · {t.audio_attempt} {progress.attempt}/{progress.maxAttempts}
+            </span>
+            <span className="tabular-nums">{progress.percent}%</span>
+          </div>
+          <div
+            className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-border/60"
+            role="progressbar"
+            aria-valuenow={progress.percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-500"
+              style={{ width: `${progress.percent}%` }}
+            />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+type AudioJob = {
+  id: string;
+  predictionId?: string;
+  startedAt: number;
+  endedAt?: number;
+  status: "running" | "succeeded" | "failed";
+  attempt: number;
+  error?: string;
+  versionLabel?: string;
+};
+
+function AudioJobsHistory({
+  t,
+  jobs,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  jobs: AudioJob[];
+}) {
+  const statusLabel = {
+    running: t.audio_jobs_status_running,
+    succeeded: t.audio_jobs_status_succeeded,
+    failed: t.audio_jobs_status_failed,
+  };
+  const statusClass = {
+    running: "text-muted-foreground",
+    succeeded: "text-emerald-500",
+    failed: "text-destructive",
+  };
+  return (
+    <section className="mt-10">
+      <h2 className="text-lg font-semibold tracking-tight">{t.audio_jobs_title}</h2>
+      {jobs.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">{t.audio_jobs_empty}</p>
+      ) : (
+        <ol className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card/40">
+          {jobs.map((j) => {
+            const duration = j.endedAt
+              ? ((j.endedAt - j.startedAt) / 1000).toFixed(1) + "s"
+              : "—";
+            return (
+              <li
+                key={j.id}
+                className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`text-[11px] uppercase tracking-wider ${statusClass[j.status]}`}>
+                      {statusLabel[j.status]}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {t.audio_attempt} {j.attempt}
+                    </span>
+                    {j.versionLabel && (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        · {j.versionLabel}
+                      </span>
+                    )}
+                  </div>
+                  {j.predictionId && (
+                    <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                      id: {j.predictionId}
+                    </div>
+                  )}
+                  {j.error && (
+                    <div className="mt-1 text-xs text-destructive">{j.error}</div>
+                  )}
+                </div>
+                <div className="text-right text-xs text-muted-foreground">
+                  <div className="tabular-nums">
+                    {new Date(j.startedAt).toLocaleTimeString()}
+                  </div>
+                  <div className="tabular-nums">
+                    {t.audio_jobs_duration}: {duration}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </section>
   );
 }

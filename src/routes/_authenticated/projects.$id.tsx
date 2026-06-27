@@ -260,7 +260,10 @@ function ProjectDetail() {
                     <a href={urls.output} download={`${project.name}.mp4`}>{t.proj_download}</a>
                   </Button>
                 )}
-                <Button variant="ghost" onClick={handleDelete}>{t.proj_delete}</Button>
+                <Button variant="ghost" onClick={handleDelete} disabled={deleting}>
+                  {deleting && <Spinner className="mr-2" />}
+                  {t.proj_delete}
+                </Button>
               </div>
             </div>
 
@@ -389,6 +392,7 @@ function AIEnhanceCard({
           <p className="mt-1 text-xs text-muted-foreground">{t.ai_enhance_desc}</p>
         </div>
         <Button onClick={onRun} disabled={busy} size="sm">
+          {busy && <Spinner className="mr-2" />}
           {busy ? t.ai_enhance_running : t.ai_enhance_run}
         </Button>
       </div>

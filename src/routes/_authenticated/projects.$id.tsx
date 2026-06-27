@@ -835,15 +835,17 @@ function AIEnhanceCard({
   );
 }
 
-type AudioJob = {
+type AudioJobRow = {
   id: string;
-  predictionId?: string;
-  startedAt: number;
-  endedAt?: number;
-  status: "running" | "succeeded" | "failed";
+  project_id: string;
+  user_id: string;
+  prediction_id: string | null;
+  status: "running" | "succeeded" | "failed" | "canceled";
   attempt: number;
-  error?: string;
-  versionLabel?: string;
+  started_at: string;
+  ended_at: string | null;
+  error: string | null;
+  version_label: string | null;
 };
 
 function AudioJobsHistory({

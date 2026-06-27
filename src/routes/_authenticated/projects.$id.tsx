@@ -746,8 +746,11 @@ function VersionHistory({
             const eo = v.export_options as Record<string, string>;
             const desc = [eo.container, eo.videoCodec, eo.resolution].filter(Boolean).join(" · ");
             return (
-              <li key={v.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
-                  {/* anchor handled by id below */}
+                <li
+                  key={v.id}
+                  id={`version-${v.id}`}
+                  className="flex scroll-mt-24 flex-wrap items-center justify-between gap-4 p-4"
+                >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-sm">{v.label}</span>

@@ -430,7 +430,10 @@ function ProjectDetail() {
           <>
             <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-semibold tracking-tight">{project.name}</h1>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-3xl font-semibold tracking-tight">{project.name}</h1>
+                  <SyncIndicator state={syncState} t={t} />
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {new Date(project.created_at).toLocaleString()}
                 </p>
@@ -516,6 +519,8 @@ function ProjectDetail() {
               restoringId={restoringId}
               restoreError={restoreError}
             />
+
+            <ActivityPanel t={t} events={activity} />
           </>
         )}
       </main>

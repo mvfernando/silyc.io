@@ -580,6 +580,7 @@ function AppPage() {
         finalDuration,
         removedSeconds: Math.max(0, originalDuration - finalDuration),
         silenceCount: detected.length,
+        silences: detected,
         credits,
         cloud,
       };
@@ -598,6 +599,8 @@ function AppPage() {
         export_options: exportOpts as unknown as Record<string, unknown>,
         output_path: outPath,
         stats: { ...stats, logs: logs.slice(-200), attempts: attemptsRef.current },
+        // store silences separately so the read-only timeline can render them
+        // (also kept in stats for clients that read from stats only)
         status: "done",
       } as never);
 

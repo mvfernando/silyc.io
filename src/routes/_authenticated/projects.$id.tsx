@@ -62,21 +62,6 @@ function ProjectDetail() {
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
-  const { data: audioJobs } = useQuery({
-    queryKey: ["audio-jobs", id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("audio_jobs" as never)
-        .select("*")
-        .eq("project_id", id)
-        .order("started_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return (data ?? []) as unknown as AudioJob[];
-    },
-    refetchInterval: realtimeOk ? false : 10_000,
-  });
-
   // Progress for AI audio: phase + estimated percent
   const [enhanceProgress, setEnhanceProgress] = useState<{
     phase: "queued" | "processing" | "finalizing";

@@ -398,6 +398,16 @@ const dict = {
     ext_status_changed: "Status updated to",
     ext_new_version: "New version added to history",
     view_in_history: "View in history",
+    audio_attempt: "Attempt",
+    audio_progress_queued: "Queued on Replicate",
+    audio_progress_processing: "Processing audio",
+    audio_progress_finalizing: "Finalizing",
+    audio_jobs_title: "Audio job history",
+    audio_jobs_empty: "No audio jobs run yet.",
+    audio_jobs_duration: "Duration",
+    audio_jobs_status_running: "Running",
+    audio_jobs_status_succeeded: "Succeeded",
+    audio_jobs_status_failed: "Failed",
   },
 } as const;
 

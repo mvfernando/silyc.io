@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,40 @@ function ProjectDetail() {
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
+  type ActivityEvent = {
+    id: string;
+    ts: number;
+    action: string;
+    state: "started" | "completed" | "failed" | "external";
+    detail?: string;
+    versionId?: string;
+  };
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const pushActivity = useCallback((e: Omit<ActivityEvent, "id" | "ts">) => {
+    setActivity((prev) =>
+      [{ ...e, id: crypto.randomUUID(), ts: Date.now() }, ...prev].slice(0, 50),
+    );
+  }, []);
+
+  // Sync indicator + realtime/polling fallback
+  type SyncState = "live" | "syncing" | "polling" | "offline";
+  const [syncState, setSyncState] = useState<SyncState>("syncing");
+  const [realtimeOk, setRealtimeOk] = useState(false);
+  const syncingTimer = useRef<number | null>(null);
+  const flashSyncing = useCallback(() => {
+    setSyncState("syncing");
+    if (syncingTimer.current) window.clearTimeout(syncingTimer.current);
+    syncingTimer.current = window.setTimeout(() => {
+      setSyncState(realtimeOk ? "live" : "polling");
+    }, 800);
+  }, [realtimeOk]);
+  useEffect(() => {
+    setSyncState(realtimeOk ? "live" : "polling");
+  }, [realtimeOk]);
+  useEffect(() => () => {
+    if (syncingTimer.current) window.clearTimeout(syncingTimer.current);
+  }, []);
+
   const openPreview = () => {
     setPreviewOpen(true);
     requestAnimationFrame(() => {
@@ -72,6 +106,7 @@ function ProjectDetail() {
       if (error) throw error;
       return data;
     },
+    refetchInterval: realtimeOk ? false : 10_000,
   });
 
   const { data: versions } = useQuery({
@@ -85,7 +120,58 @@ function ProjectDetail() {
       if (error) throw error;
       return (data ?? []) as unknown as Version[];
     },
+    refetchInterval: realtimeOk ? false : 10_000,
   });
+
+  // Detect external changes (status / new version) and toast + log activity
+  const prevStatusRef = useRef<string | null>(null);
+  const prevVersionIdsRef = useRef<Set<string>>(new Set());
+  const localActionsRef = useRef(0);
+  useEffect(() => {
+    if (!project) return;
+    const prev = prevStatusRef.current;
+    const next = project.status as string;
+    if (prev && prev !== next && localActionsRef.current === 0) {
+      pushActivity({
+        action: t.activity_action_status,
+        state: "external",
+        detail: `${prev} → ${next}`,
+      });
+      toast.info(`${t.ext_status_changed} ${next}`);
+    }
+    prevStatusRef.current = next;
+  }, [project, pushActivity, t]);
+  useEffect(() => {
+    if (!versions) return;
+    const knownIds = prevVersionIdsRef.current;
+    if (knownIds.size === 0) {
+      versions.forEach((v) => knownIds.add(v.id));
+      return;
+    }
+    const fresh = versions.filter((v) => !knownIds.has(v.id));
+    if (fresh.length && localActionsRef.current === 0) {
+      fresh.forEach((v) => {
+        pushActivity({
+          action: t.activity_action_new_version,
+          state: "external",
+          detail: v.label,
+          versionId: v.id,
+        });
+      });
+      const first = fresh[0];
+      toast.info(`${t.ext_new_version}: ${first.label}`, {
+        action: {
+          label: t.view_in_history,
+          onClick: () => {
+            document
+              .getElementById(`version-${first.id}`)
+              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          },
+        },
+      });
+    }
+    versions.forEach((v) => knownIds.add(v.id));
+  }, [versions, pushActivity, t]);
 
   const activeOutputPath = useMemo(() => {
     if (!project) return null;
@@ -119,6 +205,7 @@ function ProjectDetail() {
         "postgres_changes",
         { event: "*", schema: "public", table: "projects", filter: `id=eq.${id}` },
         () => {
+          flashSyncing();
           qc.invalidateQueries({ queryKey: ["project", id] });
           qc.invalidateQueries({ queryKey: ["projects"] });
         },
@@ -127,14 +214,24 @@ function ProjectDetail() {
         "postgres_changes",
         { event: "*", schema: "public", table: "project_versions", filter: `project_id=eq.${id}` },
         () => {
+          flashSyncing();
           qc.invalidateQueries({ queryKey: ["project-versions", id] });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setRealtimeOk(true);
+        else if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          setRealtimeOk(false);
+        }
+      });
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [id, qc]);
+  }, [id, qc, flashSyncing]);
 
   const handleDelete = async () => {
     if (!project) return;

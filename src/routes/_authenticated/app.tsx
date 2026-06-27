@@ -38,7 +38,7 @@ import {
 } from "@/lib/resume-store";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 import { mapError, type MappedError } from "@/lib/error-mapper";
-import { validateUpload, withBackoff, isTransientCloudError } from "@/lib/validate-upload";
+import { validateUpload, withBackoff, isTransientCloudError, type UploadValidation, type ValidationCheck } from "@/lib/validate-upload";
 
 const MAX_BYTES = 220 * 1024 * 1024;
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
@@ -102,6 +102,7 @@ function AppPage() {
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
   const [validating, setValidating] = useState(false);
+  const [validation, setValidation] = useState<UploadValidation | null>(null);
 
   const appendLog = useCallback((entry: Omit<JobLogEntry, "ts">) => {
     setLogs((prev) => [...prev, { ts: Date.now(), ...entry }]);
@@ -181,8 +182,10 @@ function AppPage() {
     if (!f.type.startsWith("video/")) return toast.error(t.err_file_type);
     if (f.size > MAX_BYTES) return toast.error(t.err_file_size);
     setValidating(true);
+    setValidation(null);
     try {
       const v = await validateUpload(f);
+      setValidation(v);
       if (!v.ok) {
         const msg = v.reasonKey ? t[v.reasonKey] : t.err_file_type;
         toast.error(msg);
@@ -752,6 +755,8 @@ function AppPage() {
         </section>
 
         <CloudPanel t={t} cloud={cloud} onChange={setCloud} env={CLOUD_ENV} />
+
+        {validation && <ValidationPanel t={t} v={validation} />}
 
         <ExportPanel value={exportOpts} onChange={setExportOpts} />
 

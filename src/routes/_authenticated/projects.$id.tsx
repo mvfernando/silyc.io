@@ -571,7 +571,7 @@ const VideoPanel = ({
 );
 
 function VersionHistory({
-  t, versions, currentOutputPath, activeId, onPreview, onSetCurrent, onReprocess, restoringId,
+  t, versions, currentOutputPath, activeId, onPreview, onSetCurrent, onReprocess, restoringId, restoreError,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   versions: Version[];
@@ -581,9 +581,10 @@ function VersionHistory({
   onSetCurrent: (v: Version) => void;
   onReprocess: (v: Version) => void;
   restoringId?: string | null;
+  restoreError?: { id: string; msg: string } | null;
 }) {
   return (
-    <section className="mt-12">
+    <section id="version-history" className="mt-12">
       <h2 className="text-lg font-semibold tracking-tight">{t.versions_title}</h2>
       {versions.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">{t.versions_empty}</p>
@@ -619,15 +620,33 @@ function VersionHistory({
                     {isActive ? "Preview off" : "Preview"}
                   </Button>
                   {!isCurrent && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onSetCurrent(v)}
-                      disabled={restoringId === v.id}
-                    >
-                      {restoringId === v.id && <Spinner className="mr-2" />}
-                      {t.versions_restore}
-                    </Button>
+                    <div className="flex flex-col items-end gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onSetCurrent(v)}
+                        disabled={restoringId === v.id}
+                        aria-busy={restoringId === v.id}
+                      >
+                        {restoringId === v.id && <Spinner className="mr-2" />}
+                        {t.versions_restore}
+                        {restoringId === v.id && (
+                          <span className="sr-only"> — {t.sr_busy}</span>
+                        )}
+                      </Button>
+                      {restoreError?.id === v.id && restoringId !== v.id && (
+                        <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
+                          <span>{t.failed}</span>
+                          <button
+                            type="button"
+                            onClick={() => onSetCurrent(v)}
+                            className="underline underline-offset-2"
+                          >
+                            {t.try_again}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                   <Button size="sm" onClick={() => onReprocess(v)}>
                     {t.versions_reprocess}

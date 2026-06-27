@@ -301,10 +301,30 @@ function ProjectDetail() {
                     <a href={urls.output} download={`${project.name}.mp4`}>{t.proj_download}</a>
                   </Button>
                 )}
-                <Button variant="ghost" onClick={handleDelete} disabled={deleting}>
-                  {deleting && <Spinner className="mr-2" />}
-                  {t.proj_delete}
-                </Button>
+                <div className="flex flex-col items-end gap-1">
+                  <Button
+                    variant="ghost"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    aria-busy={deleting}
+                  >
+                    {deleting && <Spinner className="mr-2" />}
+                    {t.proj_delete}
+                    {deleting && <span className="sr-only"> — {t.sr_busy}</span>}
+                  </Button>
+                  {deleteError && !deleting && (
+                    <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
+                      <span>{t.failed}</span>
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        className="underline underline-offset-2"
+                      >
+                        {t.try_again}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

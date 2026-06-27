@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SiteHeader } from "@/components/site-header";
-import { Scissors } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -83,14 +82,9 @@ function AuthPage() {
           transition={{ duration: 0.4 }}
           className="rounded-2xl border border-border/80 bg-card/60 p-8"
         >
-          <div className="mb-6 flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-md bg-primary text-primary-foreground">
-              <Scissors className="h-4 w-4" />
-            </span>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">{t.auth_title}</h1>
-              <p className="text-xs text-muted-foreground">{t.auth_sub}</p>
-            </div>
+          <div className="mb-6">
+            <h1 className="text-lg font-semibold tracking-tight">{t.auth_title}</h1>
+            <p className="mt-1 text-xs text-muted-foreground">{t.auth_sub}</p>
           </div>
 
           <Button

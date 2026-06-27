@@ -1045,9 +1045,11 @@ type ActivityEvent = {
 function ActivityPanel({
   t,
   events,
+  onExport,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   events: ActivityEvent[];
+  onExport: () => void;
 }) {
   const stateLabel = {
     started: t.activity_started,
@@ -1063,7 +1065,14 @@ function ActivityPanel({
   };
   return (
     <section className="mt-10">
-      <h2 className="text-lg font-semibold tracking-tight">{t.activity_title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">{t.activity_title}</h2>
+        {events.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={onExport}>
+            {t.export_activity_json}
+          </Button>
+        )}
+      </div>
       {events.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">{t.activity_empty}</p>
       ) : (

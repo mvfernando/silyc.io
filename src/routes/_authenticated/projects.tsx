@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { Plus, FileVideo, Loader2 } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -33,21 +32,16 @@ function ProjectsPage() {
       <main className="mx-auto max-w-5xl px-4 py-10">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-semibold tracking-tight">{t.proj_title}</h1>
-          <Button asChild className="gap-2">
-            <Link to="/app">
-              <Plus className="h-4 w-4" /> {t.proj_new}
-            </Link>
+          <Button asChild>
+            <Link to="/app">{t.proj_new}</Link>
           </Button>
         </div>
 
         {isLoading ? (
-          <div className="mt-12 flex justify-center text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-          </div>
+          <div className="mt-12 text-center text-sm text-muted-foreground">…</div>
         ) : !data || data.length === 0 ? (
           <div className="mt-12 rounded-xl border border-dashed border-border bg-card/30 p-12 text-center text-muted-foreground">
-            <FileVideo className="mx-auto h-8 w-8 opacity-60" />
-            <p className="mt-3 text-sm">{t.proj_empty}</p>
+            <p className="text-sm">{t.proj_empty}</p>
             <Button asChild className="mt-6">
               <Link to="/app">{t.proj_new}</Link>
             </Button>
@@ -67,19 +61,16 @@ function ProjectsPage() {
                   <Link
                     to="/projects/$id"
                     params={{ id: p.id }}
-                    className="flex items-center justify-between rounded-xl border border-border/80 bg-card/40 p-4 transition-colors hover:bg-card/70"
+                    className="block rounded-xl border border-border/80 bg-card/40 p-4 transition-colors hover:bg-card/70"
                   >
-                    <div>
-                      <div className="font-medium">{p.name}</div>
-                      <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                        <span className={statusClass(status)}>{t.proj_status[status] ?? status}</span>
-                        <span>{new Date(p.created_at).toLocaleDateString()}</span>
-                        {stats.removedSeconds ? (
-                          <span className="text-primary">−{formatDuration(stats.removedSeconds)}</span>
-                        ) : null}
-                      </div>
+                    <div className="font-medium">{p.name}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span className={statusClass(status)}>{t.proj_status[status] ?? status}</span>
+                      <span>{new Date(p.created_at).toLocaleDateString()}</span>
+                      {stats.removedSeconds ? (
+                        <span className="text-primary">−{formatDuration(stats.removedSeconds)}</span>
+                      ) : null}
                     </div>
-                    <FileVideo className="h-5 w-5 text-muted-foreground" />
                   </Link>
                 </motion.li>
               );

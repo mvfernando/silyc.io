@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/spinner";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { formatDuration } from "@/lib/ffmpeg-processor";
@@ -107,23 +108,32 @@ function ProjectDetail() {
 
   const handleDelete = async () => {
     if (!project) return;
+    setDeleting(true);
     const versionPaths = (versions ?? []).map((v) => v.output_path).filter(Boolean) as string[];
     const paths = [project.source_path, project.output_path, ...versionPaths].filter(Boolean) as string[];
     if (paths.length) await supabase.storage.from("videos").remove(paths);
     const { error } = await supabase.from("projects").delete().eq("id", project.id);
-    if (error) return toast.error(error.message);
+    if (error) {
+      setDeleting(false);
+      return toast.error(error.message);
+    }
     navigate({ to: "/projects" });
   };
 
   const setAsCurrent = async (v: Version) => {
     if (!project || !v.output_path) return;
+    setRestoringId(v.id);
     const { error } = await supabase
       .from("projects")
       .update({ output_path: v.output_path, stats: v.stats as never })
       .eq("id", project.id);
-    if (error) return toast.error(error.message);
+    if (error) {
+      setRestoringId(null);
+      return toast.error(error.message);
+    }
     setActiveVersionId(null);
     await qc.invalidateQueries({ queryKey: ["project", id] });
+    setRestoringId(null);
     toast.success(t.versions_restore);
   };
 

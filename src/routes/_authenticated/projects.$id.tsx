@@ -1228,12 +1228,15 @@ function VersionHistory({
             const isActive = activeId === v.id;
             const eo = v.export_options as Record<string, string>;
             const desc = [eo.container, eo.videoCodec, eo.resolution].filter(Boolean).join(" · ");
+            const silences = Array.isArray(v.stats?.silences) ? v.stats!.silences! : [];
+            const totalDur = v.stats?.originalDuration ?? 0;
             return (
                 <li
                   key={v.id}
                   id={`version-${v.id}`}
-                  className="flex scroll-mt-24 flex-wrap items-center justify-between gap-4 p-4"
+                  className="scroll-mt-24 p-4"
                 >
+                <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-sm">{v.label}</span>
@@ -1289,6 +1292,22 @@ function VersionHistory({
                     {t.versions_reprocess}
                   </Button>
                 </div>
+                </div>
+                {silences.length > 0 && totalDur > 0 && (
+                  <div className="mt-4">
+                    <SilenceTimeline
+                      silences={silences}
+                      totalDuration={totalDur}
+                      removedSeconds={v.stats?.removedSeconds}
+                      labels={{
+                        kept: t.timeline_kept,
+                        removed: t.timeline_removed,
+                        total: t.timeline_total,
+                        cuts: t.timeline_cuts,
+                      }}
+                    />
+                  </div>
+                )}
               </li>
             );
           })}

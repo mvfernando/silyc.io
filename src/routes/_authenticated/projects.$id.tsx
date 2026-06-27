@@ -237,12 +237,15 @@ function ProjectDetail() {
     if (!project) return;
     setDeleting(true);
     setDeleteError(null);
+    localActionsRef.current++;
+    pushActivity({ action: t.activity_action_delete, state: "started" });
     const versionPaths = (versions ?? []).map((v) => v.output_path).filter(Boolean) as string[];
     const paths = [project.source_path, project.output_path, ...versionPaths].filter(Boolean) as string[];
     try {
       if (paths.length) await supabase.storage.from("videos").remove(paths);
       const { error } = await supabase.from("projects").delete().eq("id", project.id);
       if (error) throw error;
+      pushActivity({ action: t.activity_action_delete, state: "completed" });
       toast.success(t.deleted, {
         action: { label: t.nav_projects, onClick: () => navigate({ to: "/projects" }) },
       });
@@ -250,11 +253,14 @@ function ProjectDetail() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : t.err_delete;
       setDeleteError(msg);
+      pushActivity({ action: t.activity_action_delete, state: "failed", detail: msg });
       toast.error(t.err_delete, {
         description: msg,
         action: { label: t.try_again, onClick: () => handleDelete() },
       });
       setDeleting(false);
+    } finally {
+      localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }
   };
 
@@ -262,6 +268,8 @@ function ProjectDetail() {
     if (!project || !v.output_path) return;
     setRestoringId(v.id);
     setRestoreError(null);
+    localActionsRef.current++;
+    pushActivity({ action: t.activity_action_restore, state: "started", detail: v.label, versionId: v.id });
     try {
       const { error } = await supabase
         .from("projects")
@@ -274,6 +282,7 @@ function ProjectDetail() {
         qc.invalidateQueries({ queryKey: ["project-versions", id] }),
         qc.invalidateQueries({ queryKey: ["projects"] }),
       ]);
+      pushActivity({ action: t.activity_action_restore, state: "completed", detail: v.label, versionId: v.id });
       toast.success(t.versions_restore, {
         action: {
           label: t.preview_open,
@@ -283,12 +292,14 @@ function ProjectDetail() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : t.err_restore;
       setRestoreError({ id: v.id, msg });
+      pushActivity({ action: t.activity_action_restore, state: "failed", detail: msg, versionId: v.id });
       toast.error(t.err_restore, {
         description: msg,
         action: { label: t.try_again, onClick: () => setAsCurrent(v) },
       });
     } finally {
       setRestoringId(null);
+      localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }
   };
 
@@ -306,6 +317,8 @@ function ProjectDetail() {
     if (!urls.output || !project) return;
     setEnhancing(true);
     setEnhanceError(null);
+    localActionsRef.current++;
+    pushActivity({ action: t.activity_action_enhance, state: "started" });
     try {
       const { url } = await enhanceFn({ data: { audioUrl: urls.output } });
       // Download enhanced audio and upload to storage as a new version asset.
@@ -330,6 +343,7 @@ function ProjectDetail() {
         qc.invalidateQueries({ queryKey: ["project-versions", id] }),
         qc.invalidateQueries({ queryKey: ["project", id] }),
       ]);
+      pushActivity({ action: t.activity_action_enhance, state: "completed", detail: label });
       toast.success(t.ai_enhance_done, {
         action: {
           label: t.view_versions,
@@ -343,12 +357,14 @@ function ProjectDetail() {
     } catch (err) {
       const mapped = mapError(err, lang);
       setEnhanceError(mapped.title);
+      pushActivity({ action: t.activity_action_enhance, state: "failed", detail: mapped.title });
       toast.error(mapped.title, {
         description: mapped.action,
         action: { label: t.try_again, onClick: () => handleEnhanceAudio() },
       });
     } finally {
       setEnhancing(false);
+      localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }
   };
 

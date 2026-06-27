@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/spinner";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { formatDuration } from "@/lib/ffmpeg-processor";
@@ -50,6 +51,8 @@ function ProjectDetail() {
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   const [enhancing, setEnhancing] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
   const openPreview = () => {
@@ -107,23 +110,32 @@ function ProjectDetail() {
 
   const handleDelete = async () => {
     if (!project) return;
+    setDeleting(true);
     const versionPaths = (versions ?? []).map((v) => v.output_path).filter(Boolean) as string[];
     const paths = [project.source_path, project.output_path, ...versionPaths].filter(Boolean) as string[];
     if (paths.length) await supabase.storage.from("videos").remove(paths);
     const { error } = await supabase.from("projects").delete().eq("id", project.id);
-    if (error) return toast.error(error.message);
+    if (error) {
+      setDeleting(false);
+      return toast.error(error.message);
+    }
     navigate({ to: "/projects" });
   };
 
   const setAsCurrent = async (v: Version) => {
     if (!project || !v.output_path) return;
+    setRestoringId(v.id);
     const { error } = await supabase
       .from("projects")
       .update({ output_path: v.output_path, stats: v.stats as never })
       .eq("id", project.id);
-    if (error) return toast.error(error.message);
+    if (error) {
+      setRestoringId(null);
+      return toast.error(error.message);
+    }
     setActiveVersionId(null);
     await qc.invalidateQueries({ queryKey: ["project", id] });
+    setRestoringId(null);
     toast.success(t.versions_restore);
   };
 
@@ -248,7 +260,10 @@ function ProjectDetail() {
                     <a href={urls.output} download={`${project.name}.mp4`}>{t.proj_download}</a>
                   </Button>
                 )}
-                <Button variant="ghost" onClick={handleDelete}>{t.proj_delete}</Button>
+                <Button variant="ghost" onClick={handleDelete} disabled={deleting}>
+                  {deleting && <Spinner className="mr-2" />}
+                  {t.proj_delete}
+                </Button>
               </div>
             </div>
 
@@ -291,6 +306,7 @@ function ProjectDetail() {
               onPreview={setActiveVersionId}
               onSetCurrent={setAsCurrent}
               onReprocess={reprocess}
+              restoringId={restoringId}
             />
           </>
         )}
@@ -377,6 +393,7 @@ function AIEnhanceCard({
           <p className="mt-1 text-xs text-muted-foreground">{t.ai_enhance_desc}</p>
         </div>
         <Button onClick={onRun} disabled={busy} size="sm">
+          {busy && <Spinner className="mr-2" />}
           {busy ? t.ai_enhance_running : t.ai_enhance_run}
         </Button>
       </div>
@@ -478,7 +495,7 @@ const VideoPanel = ({
 );
 
 function VersionHistory({
-  t, versions, currentOutputPath, activeId, onPreview, onSetCurrent, onReprocess,
+  t, versions, currentOutputPath, activeId, onPreview, onSetCurrent, onReprocess, restoringId,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   versions: Version[];
@@ -487,6 +504,7 @@ function VersionHistory({
   onPreview: (id: string | null) => void;
   onSetCurrent: (v: Version) => void;
   onReprocess: (v: Version) => void;
+  restoringId?: string | null;
 }) {
   return (
     <section className="mt-12">
@@ -525,7 +543,13 @@ function VersionHistory({
                     {isActive ? "Preview off" : "Preview"}
                   </Button>
                   {!isCurrent && (
-                    <Button variant="outline" size="sm" onClick={() => onSetCurrent(v)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onSetCurrent(v)}
+                      disabled={restoringId === v.id}
+                    >
+                      {restoringId === v.id && <Spinner className="mr-2" />}
                       {t.versions_restore}
                     </Button>
                   )}

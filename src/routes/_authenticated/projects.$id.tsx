@@ -51,6 +51,8 @@ function ProjectDetail() {
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   const [enhancing, setEnhancing] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
   const openPreview = () => {

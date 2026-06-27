@@ -1,25 +1,9 @@
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useI18n } from "@/lib/i18n";
-import { Button } from "@/components/ui/button";
 
 export function SiteHeader() {
   const { t, lang, setLang } = useI18n();
-  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const [signedIn, setSignedIn] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSignedIn(!!data.session));
-    const { data } = supabase.auth.onAuthStateChange((_e, session) => setSignedIn(!!session));
-    return () => data.subscription.unsubscribe();
-  }, []);
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate({ to: "/" });
-  };
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/70 backdrop-blur">
@@ -31,22 +15,18 @@ export function SiteHeader() {
           <span>SilentCut</span>
         </Link>
         <nav className="flex items-center gap-1 text-sm">
-          {signedIn && (
-            <>
-              <Link
-                to="/app"
-                className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted ${pathname === "/app" ? "text-foreground" : "text-muted-foreground"}`}
-              >
-                {t.nav_app}
-              </Link>
-              <Link
-                to="/projects"
-                className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted ${pathname.startsWith("/projects") ? "text-foreground" : "text-muted-foreground"}`}
-              >
-                {t.nav_projects}
-              </Link>
-            </>
-          )}
+          <Link
+            to="/app"
+            className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted ${pathname === "/app" ? "text-foreground" : "text-muted-foreground"}`}
+          >
+            {t.nav_app}
+          </Link>
+          <Link
+            to="/projects"
+            className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted ${pathname.startsWith("/projects") ? "text-foreground" : "text-muted-foreground"}`}
+          >
+            {t.nav_projects}
+          </Link>
           <button
             type="button"
             onClick={() => setLang(lang === "pt" ? "en" : "pt")}
@@ -55,15 +35,6 @@ export function SiteHeader() {
           >
             {lang}
           </button>
-          {signedIn ? (
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              {t.nav_signout}
-            </Button>
-          ) : (
-            <Button asChild size="sm">
-              <Link to="/auth">{t.nav_signin}</Link>
-            </Button>
-          )}
         </nav>
       </div>
     </header>

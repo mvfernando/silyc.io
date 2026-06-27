@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n";
@@ -21,15 +22,26 @@ import {
   type Controller,
   type ExportOptions,
   type ProgressEvent,
+  type SilenceRange,
 } from "@/lib/ffmpeg-processor";
+import { actualCloudCredits, estimateCredits } from "@/lib/credits";
+import {
+  clearResume,
+  fingerprintFile,
+  listResume,
+  saveResume,
+  type ResumeState,
+} from "@/lib/resume-store";
+import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 
 const MAX_BYTES = 220 * 1024 * 1024;
 
-type SearchParams = { reprocess?: string };
+type SearchParams = { reprocess?: string; resume?: string };
 
 export const Route = createFileRoute("/_authenticated/app")({
   validateSearch: (s: Record<string, unknown>): SearchParams => ({
     reprocess: typeof s.reprocess === "string" ? s.reprocess : undefined,
+    resume: typeof s.resume === "string" ? s.resume : undefined,
   }),
   head: () => ({ meta: [{ title: "SilentCut — Novo projeto" }] }),
   component: AppPage,
@@ -45,26 +57,38 @@ const PHASE_TO_STEP: Record<ProgressEvent["phase"], StepKey> = {
   done: "export",
 };
 
+const CLOUD_ENV: "sandbox" | "production" =
+  import.meta.env.MODE === "production" ? "production" : "sandbox";
+
 function AppPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const search = useSearch({ from: "/_authenticated/app" });
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const submitCloud = useServerFn(submitShotstackRender);
+  const pollCloud = useServerFn(pollShotstackRender);
+
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
   const [removeSilence, setRemoveSilence] = useState(true);
   const [enhanceAudio, setEnhanceAudio] = useState(false);
   const [colorGrade, setColorGrade] = useState(false);
+  const [cloud, setCloud] = useState(false);
   const [threshold, setThreshold] = useState(-30);
   const [minPause, setMinPause] = useState(0.5);
   const [exportOpts, setExportOpts] = useState<ExportOptions>(defaultExportOptions);
 
-  const [phase, setPhase] = useState<ProgressEvent["phase"] | "upload" | "idle">("idle");
+  const [phase, setPhase] = useState<ProgressEvent["phase"] | "upload" | "cloud" | "idle">("idle");
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [actualCredits, setActualCredits] = useState<number | null>(null);
   const controllerRef = useRef<Controller | null>(null);
+
+  // Resume state held alongside the picked file
+  const [resume, setResume] = useState<ResumeState | null>(null);
+  const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
 
   // Pre-fill from reprocess request
   useEffect(() => {
@@ -86,6 +110,23 @@ function AppPage() {
     })();
   }, [search.reprocess, t]);
 
+  // Load pending resume state by id (or pick the most recent one)
+  const pendingResumes = useMemo(() => listResume(), [busy]);
+  const targetResume = useMemo(() => {
+    if (search.resume) return pendingResumes.find((r) => r.projectId === search.resume) ?? null;
+    return pendingResumes[0] ?? null;
+  }, [pendingResumes, search.resume]);
+
+  useEffect(() => {
+    if (!targetResume) return;
+    setThreshold(targetResume.settings.threshold);
+    setMinPause(targetResume.settings.minPause);
+    setRemoveSilence(targetResume.settings.removeSilence);
+    setExportOpts({ ...defaultExportOptions, ...targetResume.exportOpts });
+    setName(targetResume.projectName);
+    setCloud(!!targetResume.cloud);
+  }, [targetResume]);
+
   const pick = useCallback(() => inputRef.current?.click(), []);
 
   const onFile = (f: File | null | undefined) => {
@@ -94,6 +135,11 @@ function AppPage() {
     if (f.size > MAX_BYTES) return toast.error(t.err_file_size);
     setFile(f);
     if (!name) setName(f.name.replace(/\.[^.]+$/, ""));
+    if (targetResume && fingerprintFile(f) === targetResume.fingerprint) {
+      setResume(targetResume);
+    } else {
+      setResume(null);
+    }
   };
 
   const phaseLabel = (p: typeof phase) => {
@@ -104,6 +150,7 @@ function AppPage() {
       case "audio": return t.phase_audio;
       case "encode": return t.phase_encode;
       case "upload": return t.phase_upload;
+      case "cloud": return t.cloud_status_rendering;
       case "done": return t.phase_done;
       default: return t.processing;
     }
@@ -125,10 +172,104 @@ function AppPage() {
     controllerRef.current?.cancel();
   };
 
+  const estimate = useMemo(
+    () =>
+      estimateCredits({
+        cloud,
+        fileSizeBytes: file?.size ?? 0,
+        estimatedDurationSec: resume?.totalDuration,
+        exportOpts,
+      }),
+    [cloud, file, resume, exportOpts],
+  );
+
+  const persistResume = (
+    projectId: string,
+    f: File,
+    extra: Partial<ResumeState> = {},
+  ) => {
+    saveResume({
+      projectId,
+      projectName: name || f.name,
+      fingerprint: fingerprintFile(f),
+      fileName: f.name,
+      fileSize: f.size,
+      settings: { threshold, minPause, removeSilence },
+      exportOpts,
+      lastPhase: "load",
+      cloud,
+      savedAt: Date.now(),
+      ...extra,
+    });
+  };
+
+  const runCloudRender = async (
+    silences: SilenceRange[],
+    totalDuration: number,
+    sourcePath: string,
+  ): Promise<{ blob: Blob; mime: string; ext: string; duration: number }> => {
+    setPhase("cloud");
+    setProgress(0);
+    const { data: signed } = await supabase.storage
+      .from("videos")
+      .createSignedUrl(sourcePath, 60 * 60);
+    if (!signed?.signedUrl) throw new Error("Failed to sign source URL");
+
+    // Invert silences → keeps
+    const padding = 0.1;
+    const keeps: { start: number; end: number }[] = [];
+    let cursor = 0;
+    for (const s of silences) {
+      const start = Math.max(0, s.start - padding);
+      const end = Math.min(totalDuration, s.end + padding);
+      if (start > cursor) keeps.push({ start: cursor, end: start });
+      cursor = end;
+    }
+    if (cursor < totalDuration) keeps.push({ start: cursor, end: totalDuration });
+
+    const { id } = await submitCloud({
+      data: {
+        sourceUrl: signed.signedUrl,
+        keeps,
+        resolution: exportOpts.resolution,
+        format: exportOpts.container,
+        fps: exportOpts.fps,
+      },
+    });
+
+    // Poll
+    let url: string | undefined;
+    let duration = 0;
+    for (let i = 0; i < 200; i++) {
+      if (controllerRef.current?.isCancelled()) throw new CancelledError();
+      await new Promise((r) => setTimeout(r, 3000));
+      const r = await pollCloud({ data: { id } });
+      setProgress(Math.min(95, 20 + i * 4));
+      if (r.status === "done" && r.url) {
+        url = r.url;
+        duration = r.duration ?? 0;
+        break;
+      }
+      if (r.status === "failed") throw new Error(r.error ?? t.cloud_status_failed);
+    }
+    if (!url) throw new Error(t.cloud_status_failed);
+
+    const blobRes = await fetch(url);
+    const blob = await blobRes.blob();
+    setProgress(100);
+    return {
+      blob,
+      mime: blob.type || "video/mp4",
+      ext: exportOpts.container,
+      duration: duration || totalDuration,
+    };
+  };
+
   const handleProcess = async () => {
     if (!file) return toast.error(t.err_no_file);
     setBusy(true);
     setProgress(0);
+    setActualCredits(null);
     setPhase("load");
     setPaused(false);
 
@@ -143,86 +284,180 @@ function AppPage() {
       return;
     }
 
-    const { data: project, error: projErr } = await supabase
-      .from("projects")
-      .insert({
-        user_id: userId,
-        name: name || file.name,
-        status: "processing",
-        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, exportOpts },
-      })
-      .select()
-      .single();
-    if (projErr || !project) {
-      toast.error(projErr?.message ?? t.err_generic);
-      setBusy(false);
-      return;
+    // If resuming, reuse the existing project row; otherwise create one
+    let projectId = resume?.projectId;
+    if (!projectId) {
+      const { data: project, error: projErr } = await supabase
+        .from("projects")
+        .insert({
+          user_id: userId,
+          name: name || file.name,
+          status: "processing",
+          settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, exportOpts, cloud },
+        })
+        .select()
+        .single();
+      if (projErr || !project) {
+        toast.error(projErr?.message ?? t.err_generic);
+        setBusy(false);
+        return;
+      }
+      projectId = project.id;
+    } else {
+      await supabase
+        .from("projects")
+        .update({ status: "processing" })
+        .eq("id", projectId);
     }
+
+    persistResume(projectId!, file, {
+      silences: resume?.silences,
+      totalDuration: resume?.totalDuration,
+      lastPhase: "upload",
+    });
+
+    const ext = file.name.split(".").pop() || "mp4";
+    const sourcePath = `${userId}/${projectId}/source.${ext}`;
 
     try {
       setPhase("upload");
-      const ext = file.name.split(".").pop() || "mp4";
-      const sourcePath = `${userId}/${project.id}/source.${ext}`;
       const { error: upErr } = await supabase.storage.from("videos").upload(sourcePath, file, {
         upsert: true,
         contentType: file.type,
       });
       if (upErr) throw upErr;
-      await supabase.from("projects").update({ source_path: sourcePath }).eq("id", project.id);
+      await supabase.from("projects").update({ source_path: sourcePath }).eq("id", projectId);
 
-      const result = await processVideoRemoveSilence(file, {
-        thresholdDb: threshold,
-        minPauseSec: minPause,
-        exportOptions: exportOpts,
-        controller,
-        onProgress: (e) => {
-          setPhase(e.phase);
-          if ("progress" in e) setProgress(Math.round(e.progress * 100));
-        },
-      });
+      let outputBlob: Blob;
+      let outputMime: string;
+      let outputExt: string;
+      let originalDuration: number;
+      let finalDuration: number;
+      let detected: SilenceRange[];
+
+      if (cloud) {
+        // For cloud rendering we still need silence detection — do it locally
+        // (fast) unless we already have cached silences from a previous run.
+        let silences = resume?.silences;
+        let totalDuration = resume?.totalDuration;
+        if (!silences || typeof totalDuration !== "number") {
+          const det = await processVideoRemoveSilence(file, {
+            thresholdDb: threshold,
+            minPauseSec: minPause,
+            exportOptions: exportOpts,
+            controller,
+            onProgress: (e) => {
+              setPhase(e.phase);
+              if ("progress" in e) setProgress(Math.round(e.progress * 100));
+            },
+            onDetectionComplete: ({ silences, totalDuration }) => {
+              detectionCacheRef.current = { silences, duration: totalDuration };
+              persistResume(projectId!, file, {
+                silences,
+                totalDuration,
+                lastPhase: "detect",
+              });
+            },
+          });
+          // We ran a full local render too because the API doesn't expose
+          // detection alone — keep the local output as fallback but ignore it
+          // when cloud succeeds.
+          silences = det.silences;
+          totalDuration = det.originalDuration;
+        }
+        detected = silences;
+        originalDuration = totalDuration;
+        const cr = await runCloudRender(silences, totalDuration, sourcePath);
+        outputBlob = cr.blob;
+        outputMime = cr.mime;
+        outputExt = cr.ext;
+        finalDuration = cr.duration;
+      } else {
+        const result = await processVideoRemoveSilence(file, {
+          thresholdDb: threshold,
+          minPauseSec: minPause,
+          exportOptions: exportOpts,
+          controller,
+          cachedSilences: resume?.silences,
+          cachedDuration: resume?.totalDuration,
+          onDetectionComplete: ({ silences, totalDuration }) => {
+            detectionCacheRef.current = { silences, duration: totalDuration };
+            persistResume(projectId!, file, {
+              silences,
+              totalDuration,
+              lastPhase: "detect",
+            });
+          },
+          onProgress: (e) => {
+            setPhase(e.phase);
+            if ("progress" in e) setProgress(Math.round(e.progress * 100));
+          },
+        });
+        outputBlob = result.outputBlob;
+        outputMime = result.outputMime;
+        outputExt = result.outputExt;
+        originalDuration = result.originalDuration;
+        finalDuration = result.finalDuration;
+        detected = result.silences;
+      }
 
       if (controller.isCancelled()) throw new CancelledError();
       setPhase("upload");
-      const outPath = `${userId}/${project.id}/v-${Date.now()}.${result.outputExt}`;
+      const outPath = `${userId}/${projectId}/v-${Date.now()}.${outputExt}`;
       const { error: outErr } = await supabase.storage
         .from("videos")
-        .upload(outPath, result.outputBlob, { upsert: true, contentType: result.outputMime });
+        .upload(outPath, outputBlob, { upsert: true, contentType: outputMime });
       if (outErr) throw outErr;
 
+      const credits = cloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
+      setActualCredits(credits);
+
       const stats = {
-        originalDuration: result.originalDuration,
-        finalDuration: result.finalDuration,
-        removedSeconds: result.removedSeconds,
-        silenceCount: result.silences.length,
+        originalDuration,
+        finalDuration,
+        removedSeconds: Math.max(0, originalDuration - finalDuration),
+        silenceCount: detected.length,
+        credits,
+        cloud,
       };
 
       await supabase
         .from("projects")
         .update({ status: "done", output_path: outPath, stats })
-        .eq("id", project.id);
+        .eq("id", projectId);
 
       const versionLabel = `v${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
       await supabase.from("project_versions" as never).insert({
-        project_id: project.id,
+        project_id: projectId,
         user_id: userId,
         label: versionLabel,
-        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause },
+        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, cloud },
         export_options: exportOpts as unknown as Record<string, unknown>,
         output_path: outPath,
         stats,
         status: "done",
       } as never);
 
-      toast.success(`−${formatDuration(result.removedSeconds)} ${t.proj_saved}`);
-      navigate({ to: "/projects/$id", params: { id: project.id } });
+      clearResume(projectId!);
+      toast.success(`−${formatDuration(stats.removedSeconds)} ${t.proj_saved}`);
+      navigate({ to: "/projects/$id", params: { id: projectId! } });
     } catch (err: unknown) {
       const cancelled = err instanceof CancelledError || controller.isCancelled();
+      const lastPhase = phase as string;
+      // Always persist what we have so the user can resume later
+      if (projectId) {
+        persistResume(projectId, file, {
+          silences: detectionCacheRef.current?.silences ?? resume?.silences,
+          totalDuration: detectionCacheRef.current?.duration ?? resume?.totalDuration,
+          lastPhase,
+        });
+      }
       if (cancelled) {
-        await supabase.from("projects").update({ status: "cancelled" }).eq("id", project.id);
+        await supabase.from("projects").update({ status: "cancelled" }).eq("id", projectId!);
         toast.message(t.cancelled);
       } else {
         console.error(err);
-        await supabase.from("projects").update({ status: "error" }).eq("id", project.id);
+        await supabase.from("projects").update({ status: "error" }).eq("id", projectId!);
         const msg = err instanceof Error ? err.message : t.err_generic;
         toast.error(msg);
       }
@@ -232,7 +467,9 @@ function AppPage() {
     }
   };
 
-  const activeStep: StepKey | null = busy ? PHASE_TO_STEP[phase as ProgressEvent["phase"]] ?? "export" : null;
+  const activeStep: StepKey | null = busy
+    ? PHASE_TO_STEP[phase as ProgressEvent["phase"]] ?? "export"
+    : null;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -245,6 +482,19 @@ function AppPage() {
         >
           {t.app_title}
         </motion.h1>
+
+        {targetResume && (
+          <ResumePanel
+            t={t}
+            state={targetResume}
+            matched={!!resume && resume.projectId === targetResume.projectId}
+            onDiscard={() => {
+              clearResume(targetResume.projectId);
+              setResume(null);
+              toast.message(t.resume_discard);
+            }}
+          />
+        )}
 
         <div
           onClick={pick}
@@ -334,7 +584,16 @@ function AppPage() {
           )}
         </section>
 
+        <CloudPanel t={t} cloud={cloud} onChange={setCloud} env={CLOUD_ENV} />
+
         <ExportPanel value={exportOpts} onChange={setExportOpts} />
+
+        <CreditsPanel
+          t={t}
+          estimate={estimate.credits}
+          detail={estimate.detail}
+          actual={actualCredits}
+        />
 
         {busy && (
           <div className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
@@ -344,15 +603,17 @@ function AppPage() {
                 {paused ? t.paused : phaseLabel(phase)}
               </span>
               <span className="font-mono text-xs text-muted-foreground">
-                {phase === "encode" || phase === "detect" ? `${progress}%` : ""}
+                {phase === "encode" || phase === "detect" || phase === "cloud" ? `${progress}%` : ""}
               </span>
             </div>
             <Progress
-              value={phase === "encode" || phase === "detect" ? progress : undefined}
+              value={
+                phase === "encode" || phase === "detect" || phase === "cloud" ? progress : undefined
+              }
               className="mt-2 h-1"
             />
             <div className="mt-5 flex justify-end gap-2">
-              <Button variant="ghost" onClick={handlePauseResume} disabled={phase === "upload"}>
+              <Button variant="ghost" onClick={handlePauseResume} disabled={phase === "upload" || phase === "cloud"}>
                 {paused ? t.resume : t.pause}
               </Button>
               <Button variant="outline" onClick={handleCancel}>
@@ -369,6 +630,111 @@ function AppPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+function ResumePanel({
+  t,
+  state,
+  matched,
+  onDiscard,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  state: ResumeState;
+  matched: boolean;
+  onDiscard: () => void;
+}) {
+  return (
+    <div className="mt-6 rounded-xl border border-primary/30 bg-primary/5 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-primary">
+            {t.resume_title}
+          </div>
+          <p className="mt-2 text-sm text-foreground">{state.projectName}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {state.fileName} · {(state.fileSize / 1024 / 1024).toFixed(1)} MB · {state.lastPhase}
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            {matched ? t.resume_match : t.resume_no_match}
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onDiscard}>
+          {t.resume_discard}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CloudPanel({
+  t,
+  cloud,
+  onChange,
+  env,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  cloud: boolean;
+  onChange: (v: boolean) => void;
+  env: "sandbox" | "production";
+}) {
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            {t.cloud_title}
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              {env === "production" ? t.cloud_env_prod : t.cloud_env_dev}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{t.cloud_desc}</p>
+        </div>
+        <Switch checked={cloud} onCheckedChange={onChange} />
+      </div>
+    </section>
+  );
+}
+
+function CreditsPanel({
+  t,
+  estimate,
+  detail,
+  actual,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  estimate: number;
+  detail: string;
+  actual: number | null;
+}) {
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {t.credits_title}
+      </div>
+      <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        <div className="rounded-lg border border-border/60 bg-background/30 p-4">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            {t.credits_est}
+          </div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">
+            {estimate === 0 ? "0 cr" : `${estimate} cr`}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">{detail}</div>
+        </div>
+        <div className="rounded-lg border border-border/60 bg-background/30 p-4">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            {t.credits_actual}
+          </div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">
+            {actual === null ? "—" : `${actual} cr`}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {actual === null ? "" : actual === 0 ? t.credits_free : ""}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

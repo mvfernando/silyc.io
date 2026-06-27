@@ -131,7 +131,7 @@ const dict = {
   },
 } as const;
 
-type Dict = typeof dict["pt"];
+type Dict = (typeof dict)[Lang];
 
 type Ctx = {
   lang: Lang;

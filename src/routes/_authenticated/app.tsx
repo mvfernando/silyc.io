@@ -25,16 +25,21 @@ import {
   type SilenceRange,
 } from "@/lib/ffmpeg-processor";
 import { actualCloudCredits, estimateCredits } from "@/lib/credits";
+import { explainCredits } from "@/lib/credits";
 import {
   clearResume,
   fingerprintFile,
   listResume,
+  lastPhaseToCompletedSteps,
   saveResume,
+  type JobLogEntry,
   type ResumeState,
+  type StepKey as ResumeStepKey,
 } from "@/lib/resume-store";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 
 const MAX_BYTES = 220 * 1024 * 1024;
+const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
 type SearchParams = { reprocess?: string; resume?: string };
 
@@ -61,7 +66,7 @@ const CLOUD_ENV: "sandbox" | "production" =
   import.meta.env.MODE === "production" ? "production" : "sandbox";
 
 function AppPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const search = useSearch({ from: "/_authenticated/app" });
   const inputRef = useRef<HTMLInputElement>(null);
@@ -85,10 +90,46 @@ function AppPage() {
   const [paused, setPaused] = useState(false);
   const [actualCredits, setActualCredits] = useState<number | null>(null);
   const controllerRef = useRef<Controller | null>(null);
+  const [logs, setLogs] = useState<JobLogEntry[]>([]);
+  const stepStartRef = useRef<Record<string, number>>({});
+  const attemptsRef = useRef<number>(0);
+  const lastPhaseRef = useRef<typeof phase>("idle");
 
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
+
+  const appendLog = useCallback((entry: Omit<JobLogEntry, "ts">) => {
+    setLogs((prev) => [...prev, { ts: Date.now(), ...entry }]);
+  }, []);
+
+  const markPhase = useCallback(
+    (next: typeof phase) => {
+      const prev = lastPhaseRef.current;
+      if (prev !== next && prev !== "idle") {
+        const started = stepStartRef.current[prev as string];
+        if (started) {
+          appendLog({
+            level: "info",
+            step: (PHASE_TO_STEP[prev as ProgressEvent["phase"]] ?? "export") as StepKey,
+            message: `${prev} finished`,
+            durationMs: Date.now() - started,
+          });
+        }
+      }
+      if (next !== prev) {
+        stepStartRef.current[next as string] = Date.now();
+        appendLog({
+          level: "info",
+          step: (PHASE_TO_STEP[next as ProgressEvent["phase"]] ?? "export") as StepKey,
+          message: `entered ${next}`,
+        });
+      }
+      lastPhaseRef.current = next;
+      setPhase(next);
+    },
+    [appendLog],
+  );
 
   // Pre-fill from reprocess request
   useEffect(() => {
@@ -125,6 +166,8 @@ function AppPage() {
     setExportOpts({ ...defaultExportOptions, ...targetResume.exportOpts });
     setName(targetResume.projectName);
     setCloud(!!targetResume.cloud);
+    if (targetResume.logs?.length) setLogs(targetResume.logs);
+    attemptsRef.current = targetResume.attempts ?? 0;
   }, [targetResume]);
 
   const pick = useCallback(() => inputRef.current?.click(), []);
@@ -188,6 +231,7 @@ function AppPage() {
     f: File,
     extra: Partial<ResumeState> = {},
   ) => {
+    const lastPhase = (extra.lastPhase ?? lastPhaseRef.current ?? "load") as string;
     saveResume({
       projectId,
       projectName: name || f.name,
@@ -196,7 +240,10 @@ function AppPage() {
       fileSize: f.size,
       settings: { threshold, minPause, removeSilence },
       exportOpts,
-      lastPhase: "load",
+      lastPhase,
+      completedSteps: lastPhaseToCompletedSteps(lastPhase),
+      logs: logs.slice(-200),
+      attempts: attemptsRef.current,
       cloud,
       savedAt: Date.now(),
       ...extra,
@@ -208,8 +255,9 @@ function AppPage() {
     totalDuration: number,
     sourcePath: string,
   ): Promise<{ blob: Blob; mime: string; ext: string; duration: number }> => {
-    setPhase("cloud");
+    markPhase("cloud");
     setProgress(0);
+    appendLog({ level: "info", step: "export", message: "cloud render: signing source URL" });
     const { data: signed } = await supabase.storage
       .from("videos")
       .createSignedUrl(sourcePath, 60 * 60);
@@ -236,12 +284,17 @@ function AppPage() {
         fps: exportOpts.fps,
       },
     });
+    appendLog({ level: "info", step: "export", message: `cloud render submitted (id ${id})` });
 
     // Poll
     let url: string | undefined;
     let duration = 0;
-    for (let i = 0; i < 200; i++) {
+    const startedAt = Date.now();
+    for (let i = 0; i < 400; i++) {
       if (controllerRef.current?.isCancelled()) throw new CancelledError();
+      if (Date.now() - startedAt > CLOUD_TIMEOUT_MS) {
+        throw new Error(t.cloud_timeout);
+      }
       await new Promise((r) => setTimeout(r, 3000));
       const r = await pollCloud({ data: { id } });
       setProgress(Math.min(95, 20 + i * 4));
@@ -270,8 +323,14 @@ function AppPage() {
     setBusy(true);
     setProgress(0);
     setActualCredits(null);
-    setPhase("load");
+    markPhase("load");
     setPaused(false);
+    attemptsRef.current += 1;
+    appendLog({
+      level: "info",
+      step: "system",
+      message: `attempt #${attemptsRef.current} · ${cloud ? "cloud" : "local"} · ${file.name}`,
+    });
 
     const controller = createController();
     controllerRef.current = controller;
@@ -320,7 +379,7 @@ function AppPage() {
     const sourcePath = `${userId}/${projectId}/source.${ext}`;
 
     try {
-      setPhase("upload");
+      markPhase("upload");
       const { error: upErr } = await supabase.storage.from("videos").upload(sourcePath, file, {
         upsert: true,
         contentType: file.type,
@@ -347,11 +406,16 @@ function AppPage() {
             exportOptions: exportOpts,
             controller,
             onProgress: (e) => {
-              setPhase(e.phase);
+              markPhase(e.phase);
               if ("progress" in e) setProgress(Math.round(e.progress * 100));
             },
             onDetectionComplete: ({ silences, totalDuration }) => {
               detectionCacheRef.current = { silences, duration: totalDuration };
+              appendLog({
+                level: "info",
+                step: "silences",
+                message: `detected ${silences.length} silence ranges`,
+              });
               persistResume(projectId!, file, {
                 silences,
                 totalDuration,
@@ -367,11 +431,42 @@ function AppPage() {
         }
         detected = silences;
         originalDuration = totalDuration;
-        const cr = await runCloudRender(silences, totalDuration, sourcePath);
-        outputBlob = cr.blob;
-        outputMime = cr.mime;
-        outputExt = cr.ext;
-        finalDuration = cr.duration;
+        try {
+          const cr = await runCloudRender(silences, totalDuration, sourcePath);
+          outputBlob = cr.blob;
+          outputMime = cr.mime;
+          outputExt = cr.ext;
+          finalDuration = cr.duration;
+        } catch (cloudErr) {
+          if (cloudErr instanceof CancelledError) throw cloudErr;
+          const msg = cloudErr instanceof Error ? cloudErr.message : String(cloudErr);
+          appendLog({ level: "warn", step: "export", message: `cloud failed: ${msg}` });
+          appendLog({ level: "info", step: "system", message: t.fallback_msg });
+          toast.message(t.fallback_title, { description: t.fallback_msg });
+          persistResume(projectId!, file, {
+            silences,
+            totalDuration,
+            lastPhase: "detect",
+          });
+          const local = await processVideoRemoveSilence(file, {
+            thresholdDb: threshold,
+            minPauseSec: minPause,
+            exportOptions: exportOpts,
+            controller,
+            cachedSilences: silences,
+            cachedDuration: totalDuration,
+            onProgress: (e) => {
+              markPhase(e.phase);
+              if ("progress" in e) setProgress(Math.round(e.progress * 100));
+            },
+          });
+          outputBlob = local.outputBlob;
+          outputMime = local.outputMime;
+          outputExt = local.outputExt;
+          finalDuration = local.finalDuration;
+          // mark this version as a fallback (local) one
+          setCloud(false);
+        }
       } else {
         const result = await processVideoRemoveSilence(file, {
           thresholdDb: threshold,
@@ -382,6 +477,11 @@ function AppPage() {
           cachedDuration: resume?.totalDuration,
           onDetectionComplete: ({ silences, totalDuration }) => {
             detectionCacheRef.current = { silences, duration: totalDuration };
+            appendLog({
+              level: "info",
+              step: "silences",
+              message: `detected ${silences.length} silence ranges`,
+            });
             persistResume(projectId!, file, {
               silences,
               totalDuration,
@@ -389,7 +489,7 @@ function AppPage() {
             });
           },
           onProgress: (e) => {
-            setPhase(e.phase);
+            markPhase(e.phase);
             if ("progress" in e) setProgress(Math.round(e.progress * 100));
           },
         });
@@ -402,7 +502,7 @@ function AppPage() {
       }
 
       if (controller.isCancelled()) throw new CancelledError();
-      setPhase("upload");
+      markPhase("upload");
       const outPath = `${userId}/${projectId}/v-${Date.now()}.${outputExt}`;
       const { error: outErr } = await supabase.storage
         .from("videos")
@@ -411,6 +511,11 @@ function AppPage() {
 
       const credits = cloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
       setActualCredits(credits);
+      appendLog({
+        level: "info",
+        step: "export",
+        message: `output uploaded · ${credits} cr used`,
+      });
 
       const stats = {
         originalDuration,
@@ -454,11 +559,13 @@ function AppPage() {
       }
       if (cancelled) {
         await supabase.from("projects").update({ status: "cancelled" }).eq("id", projectId!);
+        appendLog({ level: "warn", step: "system", message: "job cancelled by user" });
         toast.message(t.cancelled);
       } else {
         console.error(err);
         await supabase.from("projects").update({ status: "error" }).eq("id", projectId!);
         const msg = err instanceof Error ? err.message : t.err_generic;
+        appendLog({ level: "error", step: "system", message: msg });
         toast.error(msg);
       }
       setBusy(false);
@@ -491,6 +598,8 @@ function AppPage() {
             onDiscard={() => {
               clearResume(targetResume.projectId);
               setResume(null);
+              setLogs([]);
+              attemptsRef.current = 0;
               toast.message(t.resume_discard);
             }}
           />
@@ -593,6 +702,24 @@ function AppPage() {
           estimate={estimate.credits}
           detail={estimate.detail}
           actual={actualCredits}
+          explanation={explainCredits(
+            {
+              cloud,
+              resolution: exportOpts.resolution,
+              estimatedDurationSec: resume?.totalDuration,
+              fileSizeBytes: file?.size,
+            },
+            lang,
+          )}
+        />
+
+        <ExportsHistoryPanel t={t} />
+
+        <JobLogsPanel
+          t={t}
+          logs={logs}
+          attempts={attemptsRef.current}
+          onClear={() => setLogs([])}
         />
 
         {busy && (
@@ -644,6 +771,7 @@ function ResumePanel({
   matched: boolean;
   onDiscard: () => void;
 }) {
+  const completed = state.completedSteps ?? lastPhaseToCompletedSteps(state.lastPhase);
   return (
     <div className="mt-6 rounded-xl border border-primary/30 bg-primary/5 p-5">
       <div className="flex items-start justify-between gap-4">
@@ -658,6 +786,12 @@ function ResumePanel({
           <p className="mt-3 text-xs text-muted-foreground">
             {matched ? t.resume_match : t.resume_no_match}
           </p>
+          <div className="mt-4">
+            <div className="mb-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+              {t.resume_progress}
+            </div>
+            <StepIndicator active={null} completed={completed} t={t} />
+          </div>
         </div>
         <Button variant="ghost" size="sm" onClick={onDiscard}>
           {t.resume_discard}
@@ -701,11 +835,13 @@ function CreditsPanel({
   estimate,
   detail,
   actual,
+  explanation,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   estimate: number;
   detail: string;
   actual: number | null;
+  explanation: string;
 }) {
   return (
     <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
@@ -734,6 +870,12 @@ function CreditsPanel({
           </div>
         </div>
       </div>
+      <details className="mt-4 rounded-lg border border-border/60 bg-background/20 p-3 text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none text-foreground">
+          {t.credits_how}
+        </summary>
+        <p className="mt-2 leading-relaxed">{explanation}</p>
+      </details>
     </section>
   );
 }
@@ -871,7 +1013,15 @@ function SelectField({
   );
 }
 
-function StepIndicator({ active, t }: { active: StepKey | null; t: ReturnType<typeof useI18n>["t"] }) {
+function StepIndicator({
+  active,
+  completed,
+  t,
+}: {
+  active: StepKey | null;
+  completed?: ResumeStepKey[];
+  t: ReturnType<typeof useI18n>["t"];
+}) {
   const steps: { key: StepKey; label: string }[] = [
     { key: "silences", label: t.step_silences },
     { key: "audio", label: t.step_audio },
@@ -879,10 +1029,11 @@ function StepIndicator({ active, t }: { active: StepKey | null; t: ReturnType<ty
     { key: "export", label: t.step_export },
   ];
   const idx = active ? steps.findIndex((s) => s.key === active) : -1;
+  const completedSet = new Set<string>(completed ?? []);
   return (
     <ol className="flex items-center gap-3 text-xs">
       {steps.map((s, i) => {
-        const done = i < idx;
+        const done = i < idx || completedSet.has(s.key);
         const current = i === idx;
         return (
           <li key={s.key} className="flex flex-1 items-center gap-3">
@@ -902,5 +1053,132 @@ function StepIndicator({ active, t }: { active: StepKey | null; t: ReturnType<ty
         );
       })}
     </ol>
+  );
+}
+
+function JobLogsPanel({
+  t,
+  logs,
+  attempts,
+  onClear,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  logs: JobLogEntry[];
+  attempts: number;
+  onClear: () => void;
+}) {
+  const fmt = (ts: number) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString();
+  };
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {t.logs_title}
+          </h2>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            {t.logs_attempts} {attempts}
+          </span>
+        </div>
+        {logs.length > 0 && (
+          <button
+            onClick={onClear}
+            className="text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            {t.logs_clear}
+          </button>
+        )}
+      </div>
+      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-border/60 bg-background/40 p-3 font-mono text-[11px] leading-relaxed">
+        {logs.length === 0 ? (
+          <p className="text-muted-foreground">{t.logs_empty}</p>
+        ) : (
+          <ul className="space-y-1">
+            {logs.map((l, i) => {
+              const color =
+                l.level === "error"
+                  ? "text-destructive"
+                  : l.level === "warn"
+                    ? "text-amber-400"
+                    : "text-muted-foreground";
+              return (
+                <li key={i} className="flex gap-3">
+                  <span className="shrink-0 text-muted-foreground/70 tabular-nums">{fmt(l.ts)}</span>
+                  <span className={`shrink-0 uppercase ${color}`}>[{l.step}]</span>
+                  <span className="text-foreground">{l.message}</span>
+                  {typeof l.durationMs === "number" && (
+                    <span className="ml-auto shrink-0 text-muted-foreground/70 tabular-nums">
+                      {(l.durationMs / 1000).toFixed(2)}s
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type ExportHistoryRow = {
+  id: string;
+  label: string;
+  created_at: string;
+  stats: { credits?: number; cloud?: boolean; finalDuration?: number; removedSeconds?: number };
+  export_options: { container?: string; resolution?: string };
+};
+
+function ExportsHistoryPanel({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
+  const [rows, setRows] = useState<ExportHistoryRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("project_versions" as never)
+        .select("id,label,created_at,stats,export_options")
+        .order("created_at", { ascending: false })
+        .limit(8);
+      if (!cancelled && Array.isArray(data)) setRows(data as unknown as ExportHistoryRow[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+      <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {t.credits_history}
+      </h2>
+      {rows.length === 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">{t.credits_history_empty}</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-border/60 text-sm">
+          {rows.map((r) => {
+            const credits = r.stats?.credits ?? 0;
+            const cloud = !!r.stats?.cloud;
+            const res = r.export_options?.resolution ?? "source";
+            const fmt = r.export_options?.container ?? "mp4";
+            return (
+              <li key={r.id} className="flex items-center justify-between gap-4 py-2.5">
+                <div className="min-w-0">
+                  <div className="truncate text-foreground">{r.label}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {new Date(r.created_at).toLocaleString()} · {fmt.toUpperCase()} ·{" "}
+                    {res === "source" ? "source" : `${res}p`} · {cloud ? "cloud" : "local"}
+                  </div>
+                </div>
+                <div className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                  {credits === 0 ? "0 cr" : `${credits} cr`}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }

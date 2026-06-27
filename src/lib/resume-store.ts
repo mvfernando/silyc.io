@@ -1,5 +1,15 @@
 import type { SilenceRange, ExportOptions } from "./ffmpeg-processor";
 
+export type StepKey = "silences" | "audio" | "timeline" | "export";
+
+export type JobLogEntry = {
+  ts: number;
+  level: "info" | "warn" | "error";
+  step: StepKey | "system";
+  message: string;
+  durationMs?: number;
+};
+
 export type ResumeState = {
   projectId: string;
   projectName: string;
@@ -15,6 +25,9 @@ export type ResumeState = {
   silences?: SilenceRange[];
   totalDuration?: number;
   lastPhase: string;
+  completedSteps?: StepKey[];
+  logs?: JobLogEntry[];
+  attempts?: number;
   cloud: boolean;
   savedAt: number;
 };
@@ -50,4 +63,20 @@ export function clearResume(projectId: string) {
   const items = listResume().filter((r) => r.projectId !== projectId);
   if (typeof window === "undefined") return;
   window.localStorage.setItem(KEY, JSON.stringify(items));
+}
+
+export function lastPhaseToCompletedSteps(lastPhase: string): StepKey[] {
+  switch (lastPhase) {
+    case "detect":
+      return ["silences"];
+    case "audio":
+      return ["silences", "audio"];
+    case "encode":
+      return ["silences", "audio", "timeline"];
+    case "upload":
+    case "done":
+      return ["silences", "audio", "timeline", "export"];
+    default:
+      return [];
+  }
 }

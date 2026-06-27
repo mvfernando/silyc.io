@@ -14,6 +14,59 @@ export type Database = {
   }
   public: {
     Tables: {
+      audio_jobs: {
+        Row: {
+          attempt: number
+          created_at: string
+          ended_at: string | null
+          error: string | null
+          id: string
+          prediction_id: string | null
+          project_id: string
+          started_at: string
+          status: string
+          updated_at: string
+          user_id: string
+          version_label: string | null
+        }
+        Insert: {
+          attempt?: number
+          created_at?: string
+          ended_at?: string | null
+          error?: string | null
+          id?: string
+          prediction_id?: string | null
+          project_id: string
+          started_at?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+          version_label?: string | null
+        }
+        Update: {
+          attempt?: number
+          created_at?: string
+          ended_at?: string | null
+          error?: string | null
+          id?: string
+          prediction_id?: string | null
+          project_id?: string
+          started_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+          version_label?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audio_jobs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_versions: {
         Row: {
           created_at: string

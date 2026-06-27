@@ -9,7 +9,7 @@ import { Spinner } from "@/components/spinner";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { formatDuration } from "@/lib/ffmpeg-processor";
-import { startEnhanceAudio, pollEnhanceAudio } from "@/lib/replicate.functions";
+import { startEnhanceAudio, pollEnhanceAudio, cancelEnhanceAudio } from "@/lib/replicate.functions";
 import { explainCredits } from "@/lib/credits";
 import { mapError } from "@/lib/error-mapper";
 import { PreviewModal } from "@/components/preview-modal";
@@ -48,9 +48,12 @@ function ProjectDetail() {
   const qc = useQueryClient();
   const startEnhanceFn = useServerFn(startEnhanceAudio);
   const pollEnhanceFn = useServerFn(pollEnhanceAudio);
+  const cancelEnhanceFn = useServerFn(cancelEnhanceAudio);
   const [urls, setUrls] = useState<{ source?: string; output?: string }>({});
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   const [enhancing, setEnhancing] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+  const cancelRequestedRef = useRef(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -59,47 +62,13 @@ function ProjectDetail() {
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
-  type AudioJob = {
-    id: string;
-    predictionId?: string;
-    startedAt: number;
-    endedAt?: number;
-    status: "running" | "succeeded" | "failed";
-    attempt: number;
-    error?: string;
-    versionLabel?: string;
-  };
-  const audioJobsKey = `silentcut:audio-jobs:${id}`;
-  const [audioJobs, setAudioJobs] = useState<AudioJob[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.localStorage.getItem(audioJobsKey);
-      return raw ? (JSON.parse(raw) as AudioJob[]) : [];
-    } catch {
-      return [];
-    }
-  });
-  const updateAudioJobs = useCallback(
-    (updater: (prev: AudioJob[]) => AudioJob[]) => {
-      setAudioJobs((prev) => {
-        const next = updater(prev).slice(0, 25);
-        try {
-          window.localStorage.setItem(audioJobsKey, JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
-    },
-    [audioJobsKey],
-  );
-
   // Progress for AI audio: phase + estimated percent
   const [enhanceProgress, setEnhanceProgress] = useState<{
     phase: "queued" | "processing" | "finalizing";
     percent: number;
     attempt: number;
     maxAttempts: number;
+    startedAt: number;
   } | null>(null);
 
   type ActivityEvent = {
@@ -166,6 +135,22 @@ function ProjectDetail() {
     },
     refetchInterval: realtimeOk ? false : 10_000,
   });
+
+  const { data: audioJobsData } = useQuery({
+    queryKey: ["audio-jobs", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audio_jobs" as never)
+        .select("*")
+        .eq("project_id", id)
+        .order("started_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return (data ?? []) as unknown as AudioJobRow[];
+    },
+    refetchInterval: realtimeOk ? false : 10_000,
+  });
+  const audioJobs: AudioJobRow[] = audioJobsData ?? [];
 
   // Detect external changes (status / new version) and toast + log activity
   const prevStatusRef = useRef<string | null>(null);
@@ -357,89 +342,142 @@ function ProjectDetail() {
   );
   const activeStats: ProjectStats = (activeVersion?.stats as ProjectStats) ?? (project?.stats as ProjectStats) ?? {};
 
+  const activePredictionRef = useRef<string | null>(null);
+
+  const upsertAudioJob = async (jobId: string, patch: Partial<AudioJobRow>) => {
+    await supabase
+      .from("audio_jobs" as never)
+      .update(patch as never)
+      .eq("id", jobId);
+    qc.invalidateQueries({ queryKey: ["audio-jobs", id] });
+  };
+
+  const insertAudioJob = async (row: {
+    attempt: number;
+    status: AudioJobRow["status"];
+  }): Promise<string | null> => {
+    if (!project) return null;
+    const { data, error } = await supabase
+      .from("audio_jobs" as never)
+      .insert({
+        project_id: project.id,
+        user_id: project.user_id,
+        attempt: row.attempt,
+        status: row.status,
+      } as never)
+      .select("id")
+      .single();
+    if (error) throw error;
+    qc.invalidateQueries({ queryKey: ["audio-jobs", id] });
+    return (data as unknown as { id: string }).id;
+  };
+
+  const handleCancelEnhance = async () => {
+    if (!activePredictionRef.current) {
+      cancelRequestedRef.current = true;
+      return;
+    }
+    setCanceling(true);
+    cancelRequestedRef.current = true;
+    try {
+      await cancelEnhanceFn({ data: { id: activePredictionRef.current } });
+    } catch {
+      /* best-effort: loop will still detect cancel flag */
+    } finally {
+      setCanceling(false);
+    }
+  };
+
   const handleEnhanceAudio = async () => {
     if (!urls.output || !project) return;
     setEnhancing(true);
     setEnhanceError(null);
+    cancelRequestedRef.current = false;
+    activePredictionRef.current = null;
     localActionsRef.current++;
     pushActivity({ action: t.activity_action_enhance, state: "started" });
     const MAX_ATTEMPTS = 3;
-    const EXPECTED_MS = 60_000; // typical resemble-enhance runtime
+    const EXPECTED_MS = 60_000;
     let lastError: unknown = null;
+    let canceled = false;
     try {
       let enhancedUrl: string | null = null;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        const jobLocalId = crypto.randomUUID();
+        if (cancelRequestedRef.current) { canceled = true; break; }
         const jobStart = Date.now();
-        updateAudioJobs((prev) => [
-          {
-            id: jobLocalId,
-            startedAt: jobStart,
-            status: "running",
-            attempt,
-          },
-          ...prev,
-        ]);
-        setEnhanceProgress({ phase: "queued", percent: 2, attempt, maxAttempts: MAX_ATTEMPTS });
+        const jobId = await insertAudioJob({ attempt, status: "running" });
+        setEnhanceProgress({ phase: "queued", percent: 2, attempt, maxAttempts: MAX_ATTEMPTS, startedAt: jobStart });
         try {
           const created = await startEnhanceFn({ data: { audioUrl: urls.output } });
-          updateAudioJobs((prev) =>
-            prev.map((j) => (j.id === jobLocalId ? { ...j, predictionId: created.id } : j)),
-          );
+          activePredictionRef.current = created.id;
+          if (jobId) await upsertAudioJob(jobId, { prediction_id: created.id });
           let current = created;
-          while (
-            current.status === "starting" ||
-            current.status === "processing"
-          ) {
+          while (current.status === "starting" || current.status === "processing") {
+            if (cancelRequestedRef.current) {
+              try { await cancelEnhanceFn({ data: { id: current.id } }); } catch { /* ignore */ }
+              canceled = true;
+              if (jobId) await upsertAudioJob(jobId, {
+                status: "canceled",
+                ended_at: new Date().toISOString(),
+              });
+              break;
+            }
             const elapsed = Date.now() - jobStart;
             const pct = Math.min(95, Math.round((elapsed / EXPECTED_MS) * 90) + 5);
             setEnhanceProgress({
               phase: current.status === "starting" ? "queued" : "processing",
-              percent: pct,
-              attempt,
-              maxAttempts: MAX_ATTEMPTS,
+              percent: pct, attempt, maxAttempts: MAX_ATTEMPTS, startedAt: jobStart,
             });
             await new Promise((r) => setTimeout(r, 2500));
             current = await pollEnhanceFn({ data: { id: current.id } });
           }
+          if (canceled) break;
+          if (current.status === "canceled") {
+            canceled = true;
+            if (jobId) await upsertAudioJob(jobId, {
+              status: "canceled",
+              ended_at: new Date().toISOString(),
+            });
+            break;
+          }
           if (current.status !== "succeeded" || !current.url) {
             throw new Error(current.error ?? `Replicate ${current.status}`);
           }
-          setEnhanceProgress({ phase: "finalizing", percent: 97, attempt, maxAttempts: MAX_ATTEMPTS });
+          setEnhanceProgress({ phase: "finalizing", percent: 97, attempt, maxAttempts: MAX_ATTEMPTS, startedAt: jobStart });
           enhancedUrl = current.url;
-          updateAudioJobs((prev) =>
-            prev.map((j) =>
-              j.id === jobLocalId
-                ? { ...j, status: "succeeded", endedAt: Date.now() }
-                : j,
-            ),
-          );
+          if (jobId) await upsertAudioJob(jobId, {
+            status: "succeeded",
+            ended_at: new Date().toISOString(),
+          });
           break;
         } catch (err) {
           lastError = err;
           const msg = err instanceof Error ? err.message : String(err);
-          updateAudioJobs((prev) =>
-            prev.map((j) =>
-              j.id === jobLocalId
-                ? { ...j, status: "failed", endedAt: Date.now(), error: msg }
-                : j,
-            ),
-          );
+          if (jobId) await upsertAudioJob(jobId, {
+            status: "failed",
+            ended_at: new Date().toISOString(),
+            error: msg,
+          });
           pushActivity({
             action: t.activity_action_enhance,
             state: "failed",
             detail: `${t.audio_attempt} ${attempt}/${MAX_ATTEMPTS}: ${msg}`,
           });
-          if (attempt < MAX_ATTEMPTS) {
+          if (attempt < MAX_ATTEMPTS && !cancelRequestedRef.current) {
             const backoff = 1500 * 2 ** (attempt - 1);
             await new Promise((r) => setTimeout(r, backoff));
             continue;
           }
+          if (cancelRequestedRef.current) { canceled = true; break; }
           throw err;
         }
       }
+      if (canceled) {
+        pushActivity({ action: t.activity_action_cancel, state: "completed" });
+        toast.info(t.audio_canceled_toast);
+        return;
+      }
       if (!enhancedUrl) throw lastError ?? new Error("enhance failed");
-      // Download enhanced audio and upload to storage as a new version asset.
       const url = enhancedUrl;
       const blob = await fetch(url).then((r) => r.blob());
       const path = `${project.user_id}/${project.id}/ai-audio-${Date.now()}.wav`;
@@ -458,12 +496,18 @@ function ProjectDetail() {
         stats: { ...activeStats, aiAudio: true },
         status: "done",
       } as never);
-      updateAudioJobs((prev) => {
-        const [head, ...rest] = prev;
-        if (!head) return prev;
-        return [{ ...head, versionLabel: label }, ...rest];
-      });
-      setEnhanceProgress({ phase: "finalizing", percent: 100, attempt: MAX_ATTEMPTS, maxAttempts: MAX_ATTEMPTS });
+      // tag the most recent succeeded job for this project with the new version label
+      const { data: latest } = await supabase
+        .from("audio_jobs" as never)
+        .select("id")
+        .eq("project_id", project.id)
+        .eq("status", "succeeded")
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const latestId = (latest as unknown as { id: string } | null)?.id;
+      if (latestId) await upsertAudioJob(latestId, { version_label: label });
+      setEnhanceProgress((p) => p ? { ...p, phase: "finalizing", percent: 100 } : p);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["project-versions", id] }),
         qc.invalidateQueries({ queryKey: ["project", id] }),
@@ -473,9 +517,7 @@ function ProjectDetail() {
         action: {
           label: t.view_versions,
           onClick: () => {
-            document
-              .getElementById("version-history")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            document.getElementById("version-history")?.scrollIntoView({ behavior: "smooth", block: "start" });
           },
         },
       });
@@ -489,6 +531,7 @@ function ProjectDetail() {
       });
     } finally {
       setEnhancing(false);
+      activePredictionRef.current = null;
       setTimeout(() => setEnhanceProgress(null), 1200);
       localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }
@@ -538,6 +581,34 @@ function ProjectDetail() {
     }
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     triggerDownload(blob, `${project.name}-logs.txt`);
+  };
+
+  const exportActivity = () => {
+    if (!project) return;
+    const payload = {
+      project: { id: project.id, name: project.name },
+      exportedAt: new Date().toISOString(),
+      activity: activity.map((e) => ({
+        ts: new Date(e.ts).toISOString(),
+        action: e.action,
+        state: e.state,
+        detail: e.detail,
+        versionId: e.versionId,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    triggerDownload(blob, `${project.name}-activity.json`);
+  };
+
+  const exportAudioJobs = () => {
+    if (!project) return;
+    const payload = {
+      project: { id: project.id, name: project.name },
+      exportedAt: new Date().toISOString(),
+      jobs: audioJobs,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    triggerDownload(blob, `${project.name}-audio-jobs.json`);
   };
 
   const stats = (project?.stats ?? {}) as ProjectStats;
@@ -628,6 +699,8 @@ function ProjectDetail() {
                 error={enhanceError}
                 onRun={handleEnhanceAudio}
                 progress={enhanceProgress}
+                onCancel={handleCancelEnhance}
+                canceling={canceling}
               />
             )}
 
@@ -647,9 +720,9 @@ function ProjectDetail() {
               restoreError={restoreError}
             />
 
-            <ActivityPanel t={t} events={activity} />
+            <ActivityPanel t={t} events={activity} onExport={exportActivity} />
 
-            <AudioJobsHistory t={t} jobs={audioJobs} />
+            <AudioJobsHistory t={t} jobs={audioJobs} onExport={exportAudioJobs} />
           </>
         )}
       </main>
@@ -724,6 +797,8 @@ function AIEnhanceCard({
   error,
   onRun,
   progress,
+  onCancel,
+  canceling,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   busy: boolean;
@@ -734,7 +809,10 @@ function AIEnhanceCard({
     percent: number;
     attempt: number;
     maxAttempts: number;
+    startedAt: number;
   } | null;
+  onCancel: () => void;
+  canceling: boolean;
 }) {
   const phaseLabel = progress
     ? progress.phase === "queued"
@@ -743,6 +821,16 @@ function AIEnhanceCard({
         ? t.audio_progress_processing
         : t.audio_progress_finalizing
     : null;
+  const elapsedSec = progress ? Math.max(0.1, (Date.now() - progress.startedAt) / 1000) : 0;
+  const speed = progress ? progress.percent / elapsedSec : 0; // %/s
+  const remainingPct = progress ? Math.max(0, 100 - progress.percent) : 0;
+  const etaSec = progress && speed > 0 ? Math.round(remainingPct / speed) : null;
+  const etaLabel =
+    etaSec === null
+      ? "—"
+      : etaSec >= 60
+        ? `${Math.floor(etaSec / 60)}m ${etaSec % 60}s`
+        : `${etaSec}s`;
   return (
     <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -751,11 +839,25 @@ function AIEnhanceCard({
           <p className="mt-1 text-xs text-muted-foreground">{t.ai_enhance_desc}</p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Button onClick={onRun} disabled={busy} aria-busy={busy} size="sm">
-            {busy && <Spinner className="mr-2" />}
-            {busy ? t.ai_enhance_running : t.ai_enhance_run}
-            {busy && <span className="sr-only"> — {t.sr_busy}</span>}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={onRun} disabled={busy} aria-busy={busy} size="sm">
+              {busy && <Spinner className="mr-2" />}
+              {busy ? t.ai_enhance_running : t.ai_enhance_run}
+              {busy && <span className="sr-only"> — {t.sr_busy}</span>}
+            </Button>
+            {busy && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCancel}
+                disabled={canceling}
+                aria-busy={canceling}
+              >
+                {canceling && <Spinner className="mr-2" />}
+                {canceling ? t.audio_canceling : t.audio_cancel}
+              </Button>
+            )}
+          </div>
           {error && !busy && (
             <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
               <span>{t.failed}: {error}</span>
@@ -786,51 +888,68 @@ function AIEnhanceCard({
               style={{ width: `${progress.percent}%` }}
             />
           </div>
+          <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="tabular-nums">{t.audio_eta}: {etaLabel}</span>
+            <span className="tabular-nums">{t.audio_speed}: {speed.toFixed(1)} %/s</span>
+          </div>
         </div>
       )}
     </section>
   );
 }
 
-type AudioJob = {
+type AudioJobRow = {
   id: string;
-  predictionId?: string;
-  startedAt: number;
-  endedAt?: number;
-  status: "running" | "succeeded" | "failed";
+  project_id: string;
+  user_id: string;
+  prediction_id: string | null;
+  status: "running" | "succeeded" | "failed" | "canceled";
   attempt: number;
-  error?: string;
-  versionLabel?: string;
+  started_at: string;
+  ended_at: string | null;
+  error: string | null;
+  version_label: string | null;
 };
 
 function AudioJobsHistory({
   t,
   jobs,
+  onExport,
 }: {
   t: ReturnType<typeof useI18n>["t"];
-  jobs: AudioJob[];
+  jobs: AudioJobRow[];
+  onExport: () => void;
 }) {
-  const statusLabel = {
+  const statusLabel: Record<AudioJobRow["status"], string> = {
     running: t.audio_jobs_status_running,
     succeeded: t.audio_jobs_status_succeeded,
     failed: t.audio_jobs_status_failed,
+    canceled: t.audio_jobs_status_canceled,
   };
-  const statusClass = {
+  const statusClass: Record<AudioJobRow["status"], string> = {
     running: "text-muted-foreground",
     succeeded: "text-emerald-500",
     failed: "text-destructive",
+    canceled: "text-amber-500",
   };
   return (
     <section className="mt-10">
-      <h2 className="text-lg font-semibold tracking-tight">{t.audio_jobs_title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">{t.audio_jobs_title}</h2>
+        {jobs.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={onExport}>
+            {t.export_jobs_json}
+          </Button>
+        )}
+      </div>
       {jobs.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">{t.audio_jobs_empty}</p>
       ) : (
         <ol className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card/40">
           {jobs.map((j) => {
-            const duration = j.endedAt
-              ? ((j.endedAt - j.startedAt) / 1000).toFixed(1) + "s"
-              : "—";
+            const startedMs = new Date(j.started_at).getTime();
+            const endedMs = j.ended_at ? new Date(j.ended_at).getTime() : null;
+            const duration = endedMs ? ((endedMs - startedMs) / 1000).toFixed(1) + "s" : "—";
             return (
               <li
                 key={j.id}
@@ -844,15 +963,15 @@ function AudioJobsHistory({
                     <span className="text-xs text-muted-foreground">
                       {t.audio_attempt} {j.attempt}
                     </span>
-                    {j.versionLabel && (
+                    {j.version_label && (
                       <span className="font-mono text-xs text-muted-foreground">
-                        · {j.versionLabel}
+                        · {j.version_label}
                       </span>
                     )}
                   </div>
-                  {j.predictionId && (
+                  {j.prediction_id && (
                     <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                      id: {j.predictionId}
+                      id: {j.prediction_id}
                     </div>
                   )}
                   {j.error && (
@@ -861,7 +980,7 @@ function AudioJobsHistory({
                 </div>
                 <div className="text-right text-xs text-muted-foreground">
                   <div className="tabular-nums">
-                    {new Date(j.startedAt).toLocaleTimeString()}
+                    {new Date(j.started_at).toLocaleTimeString()}
                   </div>
                   <div className="tabular-nums">
                     {t.audio_jobs_duration}: {duration}
@@ -926,9 +1045,11 @@ type ActivityEvent = {
 function ActivityPanel({
   t,
   events,
+  onExport,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   events: ActivityEvent[];
+  onExport: () => void;
 }) {
   const stateLabel = {
     started: t.activity_started,
@@ -944,7 +1065,14 @@ function ActivityPanel({
   };
   return (
     <section className="mt-10">
-      <h2 className="text-lg font-semibold tracking-tight">{t.activity_title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">{t.activity_title}</h2>
+        {events.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={onExport}>
+            {t.export_activity_json}
+          </Button>
+        )}
+      </div>
       {events.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">{t.activity_empty}</p>
       ) : (

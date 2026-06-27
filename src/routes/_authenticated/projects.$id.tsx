@@ -851,31 +851,42 @@ type AudioJobRow = {
 function AudioJobsHistory({
   t,
   jobs,
+  onExport,
 }: {
   t: ReturnType<typeof useI18n>["t"];
-  jobs: AudioJob[];
+  jobs: AudioJobRow[];
+  onExport: () => void;
 }) {
-  const statusLabel = {
+  const statusLabel: Record<AudioJobRow["status"], string> = {
     running: t.audio_jobs_status_running,
     succeeded: t.audio_jobs_status_succeeded,
     failed: t.audio_jobs_status_failed,
+    canceled: t.audio_jobs_status_canceled,
   };
-  const statusClass = {
+  const statusClass: Record<AudioJobRow["status"], string> = {
     running: "text-muted-foreground",
     succeeded: "text-emerald-500",
     failed: "text-destructive",
+    canceled: "text-amber-500",
   };
   return (
     <section className="mt-10">
-      <h2 className="text-lg font-semibold tracking-tight">{t.audio_jobs_title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">{t.audio_jobs_title}</h2>
+        {jobs.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={onExport}>
+            {t.export_jobs_json}
+          </Button>
+        )}
+      </div>
       {jobs.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">{t.audio_jobs_empty}</p>
       ) : (
         <ol className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card/40">
           {jobs.map((j) => {
-            const duration = j.endedAt
-              ? ((j.endedAt - j.startedAt) / 1000).toFixed(1) + "s"
-              : "—";
+            const startedMs = new Date(j.started_at).getTime();
+            const endedMs = j.ended_at ? new Date(j.ended_at).getTime() : null;
+            const duration = endedMs ? ((endedMs - startedMs) / 1000).toFixed(1) + "s" : "—";
             return (
               <li
                 key={j.id}
@@ -889,15 +900,15 @@ function AudioJobsHistory({
                     <span className="text-xs text-muted-foreground">
                       {t.audio_attempt} {j.attempt}
                     </span>
-                    {j.versionLabel && (
+                    {j.version_label && (
                       <span className="font-mono text-xs text-muted-foreground">
-                        · {j.versionLabel}
+                        · {j.version_label}
                       </span>
                     )}
                   </div>
-                  {j.predictionId && (
+                  {j.prediction_id && (
                     <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                      id: {j.predictionId}
+                      id: {j.prediction_id}
                     </div>
                   )}
                   {j.error && (
@@ -906,7 +917,7 @@ function AudioJobsHistory({
                 </div>
                 <div className="text-right text-xs text-muted-foreground">
                   <div className="tabular-nums">
-                    {new Date(j.startedAt).toLocaleTimeString()}
+                    {new Date(j.started_at).toLocaleTimeString()}
                   </div>
                   <div className="tabular-nums">
                     {t.audio_jobs_duration}: {duration}

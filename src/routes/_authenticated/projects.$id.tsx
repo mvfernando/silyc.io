@@ -442,10 +442,12 @@ function PublicStatusPanel({
 function AIEnhanceCard({
   t,
   busy,
+  error,
   onRun,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   busy: boolean;
+  error: string | null;
   onRun: () => void;
 }) {
   return (
@@ -455,10 +457,21 @@ function AIEnhanceCard({
           <div className="text-sm font-medium">{t.ai_enhance_title}</div>
           <p className="mt-1 text-xs text-muted-foreground">{t.ai_enhance_desc}</p>
         </div>
-        <Button onClick={onRun} disabled={busy} size="sm">
-          {busy && <Spinner className="mr-2" />}
-          {busy ? t.ai_enhance_running : t.ai_enhance_run}
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button onClick={onRun} disabled={busy} aria-busy={busy} size="sm">
+            {busy && <Spinner className="mr-2" />}
+            {busy ? t.ai_enhance_running : t.ai_enhance_run}
+            {busy && <span className="sr-only"> — {t.sr_busy}</span>}
+          </Button>
+          {error && !busy && (
+            <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
+              <span>{t.failed}: {error}</span>
+              <button type="button" onClick={onRun} className="underline underline-offset-2">
+                {t.try_again}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

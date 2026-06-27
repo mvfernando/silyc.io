@@ -1,5 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, AudioWaveform, Scissors, Sparkles, Clock, CheckCircle2 } from "lucide-react";
 import { motion } from "motion/react";
 import { SiteHeader } from "@/components/site-header";
 import { useI18n } from "@/lib/i18n";
@@ -52,9 +51,8 @@ function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-xs uppercase tracking-wider text-muted-foreground"
+            className="inline-block rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
           >
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
             {t.hero_eyebrow}
           </motion.div>
           <motion.h1
@@ -79,11 +77,8 @@ function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
             transition={{ duration: 0.6, delay: 0.15 }}
             className="mt-8 flex flex-wrap items-center gap-3"
           >
-            <Button asChild size="lg" className="gap-2">
-              <Link to="/auth">
-                {t.hero_cta}
-                <ArrowRight className="h-4 w-4" />
-              </Link>
+            <Button asChild size="lg">
+              <Link to="/auth">{t.hero_cta}</Link>
             </Button>
             <Button asChild size="lg" variant="ghost">
               <a href="#features">{t.hero_secondary}</a>
@@ -107,11 +102,8 @@ function HeroVisual() {
         className="rounded-2xl border border-border/80 bg-card/60 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] grain-overlay"
       >
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-2">
-            <AudioWaveform className="h-3.5 w-3.5 text-primary" />
-            interview.mp4
-          </span>
-          <span>00:14:32</span>
+          <span className="font-mono">interview.mp4</span>
+          <span className="font-mono tabular-nums">00:14:32</span>
         </div>
         <div className="mt-4 flex h-28 items-end gap-[3px]">
           {bars.map((_, i) => {
@@ -138,9 +130,8 @@ function HeroVisual() {
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.4 }}
-            className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary"
+            className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary tabular-nums"
           >
-            <Scissors className="h-3 w-3" />
             −4:18 trimmed
           </motion.div>
         </div>
@@ -151,9 +142,9 @@ function HeroVisual() {
 
 function Features({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
   const items = [
-    { icon: Scissors, title: t.feat_1_t, desc: t.feat_1_d },
-    { icon: AudioWaveform, title: t.feat_2_t, desc: t.feat_2_d },
-    { icon: Sparkles, title: t.feat_3_t, desc: t.feat_3_d },
+    { num: "01", title: t.feat_1_t, desc: t.feat_1_d },
+    { num: "02", title: t.feat_2_t, desc: t.feat_2_d },
+    { num: "03", title: t.feat_3_t, desc: t.feat_3_d },
   ];
   return (
     <section id="features" className="border-b border-border/60 py-20">
@@ -169,10 +160,8 @@ function Features({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
               transition={{ duration: 0.5, delay: i * 0.08 }}
               className="rounded-xl border border-border/80 bg-card/60 p-6"
             >
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-primary/15 text-primary">
-                <it.icon className="h-4 w-4" />
-              </span>
-              <h3 className="mt-4 text-lg font-semibold">{it.title}</h3>
+              <span className="font-mono text-[11px] tracking-widest text-primary">{it.num}</span>
+              <h3 className="mt-3 text-lg font-semibold">{it.title}</h3>
               <p className="mt-2 text-sm text-muted-foreground">{it.desc}</p>
             </motion.div>
           ))}
@@ -189,8 +178,8 @@ function Impact({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
         <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t.impact_t}</h2>
         <div className="mt-10 grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border border-border/80 bg-card/40 p-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="h-4 w-4" /> {t.impact_before}
+            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              {t.impact_before}
             </div>
             <ul className="mt-4 space-y-3">
               {t.impact_before_list.map((line) => (
@@ -202,13 +191,13 @@ function Impact({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
             <p className="mt-6 text-2xl font-semibold text-muted-foreground">~ 1–2h</p>
           </div>
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-6">
-            <div className="flex items-center gap-2 text-sm text-primary">
-              <Sparkles className="h-4 w-4" /> {t.impact_after}
+            <div className="text-[11px] uppercase tracking-[0.18em] text-primary">
+              {t.impact_after}
             </div>
             <ul className="mt-4 space-y-3">
               {t.impact_after_list.map((line) => (
                 <li key={line} className="flex items-center gap-3 text-sm">
-                  <CheckCircle2 className="h-4 w-4 text-primary" /> {line}
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary" /> {line}
                 </li>
               ))}
             </ul>
@@ -226,11 +215,8 @@ function CtaStrip({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
       <div className="mx-auto max-w-4xl px-4 text-center">
         <h2 className="text-4xl font-semibold tracking-tight">{t.hero_title}</h2>
         <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">{t.hero_sub}</p>
-        <Button asChild size="lg" className="mt-8 gap-2">
-          <Link to="/auth">
-            {t.hero_cta}
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+        <Button asChild size="lg" className="mt-8">
+          <Link to="/auth">{t.hero_cta}</Link>
         </Button>
       </div>
     </section>

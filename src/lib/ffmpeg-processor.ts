@@ -22,6 +22,57 @@ async function loadFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {
   return loadPromise;
 }
 
+export function terminateFFmpeg() {
+  try {
+    ffmpegInstance?.terminate();
+  } catch {}
+  ffmpegInstance = null;
+  loadPromise = null;
+}
+
+export class CancelledError extends Error {
+  constructor() {
+    super("Cancelled");
+    this.name = "CancelledError";
+  }
+}
+
+export type Controller = {
+  cancel: () => void;
+  pause: () => void;
+  resume: () => void;
+  isCancelled: () => boolean;
+  isPaused: () => boolean;
+};
+
+export function createController(): Controller {
+  let cancelled = false;
+  let paused = false;
+  return {
+    cancel: () => {
+      cancelled = true;
+      paused = false;
+      terminateFFmpeg();
+    },
+    pause: () => {
+      paused = true;
+    },
+    resume: () => {
+      paused = false;
+    },
+    isCancelled: () => cancelled,
+    isPaused: () => paused,
+  };
+}
+
+async function waitWhilePaused(c?: Controller) {
+  if (!c) return;
+  while (c.isPaused() && !c.isCancelled()) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (c.isCancelled()) throw new CancelledError();
+}
+
 export type SilenceRange = { start: number; end: number };
 
 function parseSilenceLog(log: string, totalDuration: number): SilenceRange[] {
@@ -56,23 +107,52 @@ function invertRanges(silences: SilenceRange[], totalDuration: number, padding: 
   return keep.filter((r) => r.end - r.start > 0.05);
 }
 
+export type Phase = "load" | "probe" | "detect" | "audio" | "encode" | "done";
+
 export type ProgressEvent =
   | { phase: "load"; progress: number }
   | { phase: "probe"; progress: number }
   | { phase: "detect"; progress: number }
+  | { phase: "audio"; progress: number }
   | { phase: "encode"; progress: number }
   | { phase: "done" };
+
+export type ExportOptions = {
+  container: "mp4" | "webm" | "mov";
+  videoCodec: "libx264" | "libx265" | "libvpx-vp9";
+  audioCodec: "aac" | "libopus";
+  videoBitrate?: string; // e.g. "6M", "2500k" — empty = CRF/quality
+  audioBitrate: string; // e.g. "160k"
+  resolution: "source" | "2160" | "1440" | "1080" | "720" | "480"; // target height
+  crf: number; // 17–28
+  fps?: number;
+};
+
+export const defaultExportOptions: ExportOptions = {
+  container: "mp4",
+  videoCodec: "libx264",
+  audioCodec: "aac",
+  videoBitrate: "",
+  audioBitrate: "160k",
+  resolution: "source",
+  crf: 22,
+  fps: undefined,
+};
 
 export type ProcessOptions = {
   thresholdDb: number; // e.g. -30
   minPauseSec: number; // e.g. 0.5
   paddingSec?: number; // keep around speech
+  exportOptions?: ExportOptions;
+  controller?: Controller;
   onProgress?: (e: ProgressEvent) => void;
   onLog?: (msg: string) => void;
 };
 
 export type ProcessResult = {
   outputBlob: Blob;
+  outputMime: string;
+  outputExt: string;
   originalDuration: number;
   finalDuration: number;
   removedSeconds: number;
@@ -80,13 +160,23 @@ export type ProcessResult = {
 };
 
 export async function processVideoRemoveSilence(file: File, opts: ProcessOptions): Promise<ProcessResult> {
-  const { thresholdDb, minPauseSec, paddingSec = 0.1, onProgress, onLog } = opts;
+  const {
+    thresholdDb,
+    minPauseSec,
+    paddingSec = 0.1,
+    onProgress,
+    onLog,
+    controller,
+    exportOptions = defaultExportOptions,
+  } = opts;
   const ffmpeg = await loadFFmpeg(onLog);
   onProgress?.({ phase: "load", progress: 1 });
+  await waitWhilePaused(controller);
 
   const inputName = "input." + (file.name.split(".").pop() || "mp4");
   await ffmpeg.writeFile(inputName, await fetchFile(file));
   onProgress?.({ phase: "probe", progress: 0.3 });
+  await waitWhilePaused(controller);
 
   // First pass: detect silences. Capture logs.
   let logBuf = "";
@@ -105,6 +195,7 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
     "-",
   ]);
   ffmpeg.off("log", logHandler);
+  if (controller?.isCancelled()) throw new CancelledError();
 
   const durMatch = logBuf.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
   const totalDuration = durMatch
@@ -114,6 +205,7 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
   const silences = parseSilenceLog(logBuf, totalDuration);
   const keeps = invertRanges(silences, totalDuration, paddingSec);
   onProgress?.({ phase: "detect", progress: 1 });
+  await waitWhilePaused(controller);
 
   if (keeps.length === 0) {
     throw new Error("No audible content detected. Try lowering the silence threshold.");
@@ -123,11 +215,41 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
   const videoExpr = keeps.map((k) => `between(t,${k.start.toFixed(3)},${k.end.toFixed(3)})`).join("+");
   const audioExpr = videoExpr;
 
-  const filter = `[0:v]select='${videoExpr}',setpts=N/FRAME_RATE/TB[v];[0:a]aselect='${audioExpr}',asetpts=N/SR/TB,loudnorm=I=-16:TP=-1.5:LRA=11[a]`;
+  // Resolution scale
+  let scaleChain = "";
+  if (exportOptions.resolution !== "source") {
+    const h = parseInt(exportOptions.resolution, 10);
+    scaleChain = `,scale=-2:${h}:flags=lanczos`;
+  }
+  // FPS
+  const fpsChain = exportOptions.fps ? `,fps=${exportOptions.fps}` : "";
+
+  const filter =
+    `[0:v]select='${videoExpr}',setpts=N/FRAME_RATE/TB${scaleChain}${fpsChain}[v];` +
+    `[0:a]aselect='${audioExpr}',asetpts=N/SR/TB,loudnorm=I=-16:TP=-1.5:LRA=11[a]`;
+
+  onProgress?.({ phase: "audio", progress: 1 });
 
   ffmpeg.on("progress", ({ progress }) => {
     onProgress?.({ phase: "encode", progress: Math.max(0, Math.min(1, progress)) });
   });
+
+  const ext = exportOptions.container;
+  const outName = `output.${ext}`;
+  const videoArgs: string[] = ["-c:v", exportOptions.videoCodec];
+  if (exportOptions.videoCodec === "libvpx-vp9") {
+    videoArgs.push("-row-mt", "1", "-deadline", "good", "-cpu-used", "4");
+  } else {
+    videoArgs.push("-preset", "ultrafast");
+  }
+  if (exportOptions.videoBitrate && exportOptions.videoBitrate.trim()) {
+    videoArgs.push("-b:v", exportOptions.videoBitrate.trim());
+  } else {
+    videoArgs.push("-crf", String(exportOptions.crf));
+  }
+
+  const audioArgs: string[] = ["-c:a", exportOptions.audioCodec, "-b:a", exportOptions.audioBitrate];
+  const containerArgs: string[] = ext === "mp4" || ext === "mov" ? ["-movflags", "+faststart"] : [];
 
   await ffmpeg.exec([
     "-i",
@@ -138,33 +260,33 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
     "[v]",
     "-map",
     "[a]",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "ultrafast",
-    "-crf",
-    "23",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "160k",
-    "-movflags",
-    "+faststart",
-    "output.mp4",
+    ...videoArgs,
+    ...audioArgs,
+    ...containerArgs,
+    outName,
   ]);
+  if (controller?.isCancelled()) throw new CancelledError();
 
-  const data = (await ffmpeg.readFile("output.mp4")) as Uint8Array;
+  const data = (await ffmpeg.readFile(outName)) as Uint8Array;
   const finalDuration = keeps.reduce((acc, k) => acc + (k.end - k.start), 0);
 
   try {
     await ffmpeg.deleteFile(inputName);
-    await ffmpeg.deleteFile("output.mp4");
+    await ffmpeg.deleteFile(outName);
   } catch {}
 
   onProgress?.({ phase: "done" });
 
+  const mimeMap: Record<string, string> = {
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime",
+  };
+
   return {
-    outputBlob: new Blob([data.buffer as ArrayBuffer], { type: "video/mp4" }),
+    outputBlob: new Blob([data.buffer as ArrayBuffer], { type: mimeMap[ext] }),
+    outputMime: mimeMap[ext],
+    outputExt: ext,
     originalDuration: totalDuration,
     finalDuration,
     removedSeconds: Math.max(0, totalDuration - finalDuration),

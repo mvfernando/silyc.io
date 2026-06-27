@@ -1,0 +1,184 @@
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+
+export type Lang = "pt" | "en";
+
+const dict = {
+  pt: {
+    nav_app: "App",
+    nav_projects: "Projetos",
+    nav_signin: "Entrar",
+    nav_signout: "Sair",
+    hero_eyebrow: "Pós-produção automatizada",
+    hero_title: "Edição limpa em um clique.",
+    hero_sub: "Remova silêncios, pausas e ruídos do seu vídeo em minutos — não em horas.",
+    hero_cta: "Começar grátis",
+    hero_secondary: "Ver como funciona",
+    feat_title: "O que ela faz",
+    feat_1_t: "Limpeza da timeline",
+    feat_1_d: "Detecta silêncios, respirações e pausas longas. Fecha os cortes mantendo o ritmo natural da fala.",
+    feat_2_t: "Otimização de áudio",
+    feat_2_d: "Reduz ruído, uniformiza volume e melhora a clareza da voz com IA.",
+    feat_3_t: "Correção de cor",
+    feat_3_d: "Ajusta exposição e aplica um visual cinematográfico mantendo tons de pele naturais.",
+    impact_t: "Horas viram minutos",
+    impact_before: "Antes",
+    impact_after: "Depois",
+    impact_before_list: ["30 min procurando silêncios", "20 min ajustando áudio", "15 min cortando pausas", "20 min organizando cortes"],
+    impact_after_list: ["Upload do vídeo", "Análise automática", "Cortes aplicados", "Download em minutos"],
+    auth_title: "Entre na sua conta",
+    auth_sub: "Acesse seus projetos e processe novos vídeos.",
+    auth_email: "Email",
+    auth_password: "Senha",
+    auth_signin: "Entrar",
+    auth_signup: "Criar conta",
+    auth_google: "Continuar com Google",
+    auth_or: "ou",
+    auth_toggle_to_signup: "Não tem conta? Criar agora",
+    auth_toggle_to_signin: "Já tem conta? Entrar",
+    app_title: "Novo projeto",
+    app_drop: "Arraste um vídeo aqui ou clique para escolher",
+    app_drop_hint: "MP4, MOV, WebM até ~200 MB",
+    app_name: "Nome do projeto",
+    app_options: "Opções de processamento",
+    opt_silence: "Remover silêncios e pausas",
+    opt_silence_d: "Detecta trechos silenciosos e fecha os cortes automaticamente.",
+    opt_audio: "Otimizar áudio com IA",
+    opt_audio_d: "Reduz ruído e melhora clareza da voz (requer conexão com Replicate).",
+    opt_color: "Color grading cinematográfico",
+    opt_color_d: "Aplica um look cinematográfico mantendo tons de pele.",
+    opt_threshold: "Limiar de silêncio",
+    opt_min_pause: "Pausa mínima",
+    process: "Processar vídeo",
+    processing: "Processando…",
+    proj_title: "Seus projetos",
+    proj_empty: "Você ainda não processou nenhum vídeo.",
+    proj_new: "Novo projeto",
+    proj_status: { pending: "Pendente", processing: "Processando", done: "Concluído", error: "Erro" },
+    proj_saved: "economizado",
+    proj_download: "Baixar resultado",
+    proj_delete: "Excluir projeto",
+    proj_back: "Voltar",
+    proj_before: "Antes",
+    proj_after: "Depois",
+    phase_load: "Carregando motor…",
+    phase_probe: "Analisando vídeo…",
+    phase_detect: "Detectando silêncios…",
+    phase_encode: "Renderizando vídeo limpo…",
+    phase_upload: "Enviando para a nuvem…",
+    phase_done: "Concluído",
+    coming_soon: "em breve",
+    coming_soon_msg: "Esse recurso estará disponível assim que você conectar Replicate.",
+    err_generic: "Algo deu errado. Tente novamente.",
+    err_file_type: "Formato de arquivo não suportado.",
+    err_file_size: "Arquivo grande demais (limite ~200 MB).",
+    err_no_file: "Selecione um vídeo primeiro.",
+    footer: "SilentCut — pós-produção automatizada",
+  },
+  en: {
+    nav_app: "App",
+    nav_projects: "Projects",
+    nav_signin: "Sign in",
+    nav_signout: "Sign out",
+    hero_eyebrow: "Automated post-production",
+    hero_title: "Clean edits in one click.",
+    hero_sub: "Remove silences, pauses, and noise from your video in minutes — not hours.",
+    hero_cta: "Get started free",
+    hero_secondary: "See how it works",
+    feat_title: "What it does",
+    feat_1_t: "Timeline cleanup",
+    feat_1_d: "Detects silences, breaths, and long pauses. Closes the cuts while keeping speech natural.",
+    feat_2_t: "Audio optimization",
+    feat_2_d: "Reduces noise, normalizes volume, and improves voice clarity with AI.",
+    feat_3_t: "Color correction",
+    feat_3_d: "Adjusts exposure and applies a cinematic look while keeping skin tones natural.",
+    impact_t: "Hours become minutes",
+    impact_before: "Before",
+    impact_after: "After",
+    impact_before_list: ["30 min finding silences", "20 min fixing audio", "15 min trimming pauses", "20 min organizing cuts"],
+    impact_after_list: ["Upload the video", "Automatic analysis", "Cuts applied", "Download in minutes"],
+    auth_title: "Sign in to your account",
+    auth_sub: "Access your projects and process new videos.",
+    auth_email: "Email",
+    auth_password: "Password",
+    auth_signin: "Sign in",
+    auth_signup: "Create account",
+    auth_google: "Continue with Google",
+    auth_or: "or",
+    auth_toggle_to_signup: "No account? Create one",
+    auth_toggle_to_signin: "Already have an account? Sign in",
+    app_title: "New project",
+    app_drop: "Drag a video here or click to choose",
+    app_drop_hint: "MP4, MOV, WebM up to ~200 MB",
+    app_name: "Project name",
+    app_options: "Processing options",
+    opt_silence: "Remove silences and pauses",
+    opt_silence_d: "Detects silent segments and closes the cuts automatically.",
+    opt_audio: "AI audio enhancement",
+    opt_audio_d: "Reduces noise and improves voice clarity (requires Replicate connection).",
+    opt_color: "Cinematic color grading",
+    opt_color_d: "Applies a cinematic look while preserving skin tones.",
+    opt_threshold: "Silence threshold",
+    opt_min_pause: "Minimum pause",
+    process: "Process video",
+    processing: "Processing…",
+    proj_title: "Your projects",
+    proj_empty: "You haven't processed any video yet.",
+    proj_new: "New project",
+    proj_status: { pending: "Pending", processing: "Processing", done: "Done", error: "Error" },
+    proj_saved: "saved",
+    proj_download: "Download result",
+    proj_delete: "Delete project",
+    proj_back: "Back",
+    proj_before: "Before",
+    proj_after: "After",
+    phase_load: "Loading engine…",
+    phase_probe: "Analyzing video…",
+    phase_detect: "Detecting silences…",
+    phase_encode: "Rendering clean video…",
+    phase_upload: "Uploading to cloud…",
+    phase_done: "Done",
+    coming_soon: "coming soon",
+    coming_soon_msg: "This feature will be available once you connect Replicate.",
+    err_generic: "Something went wrong. Try again.",
+    err_file_type: "Unsupported file format.",
+    err_file_size: "File too large (~200 MB limit).",
+    err_no_file: "Select a video first.",
+    footer: "SilentCut — automated post-production",
+  },
+} as const;
+
+type Dict = (typeof dict)[Lang];
+
+type Ctx = {
+  lang: Lang;
+  setLang: (l: Lang) => void;
+  t: Dict;
+};
+
+const I18nContext = createContext<Ctx | null>(null);
+
+function detect(): Lang {
+  if (typeof window === "undefined") return "pt";
+  const stored = window.localStorage.getItem("silentcut.lang");
+  if (stored === "pt" || stored === "en") return stored;
+  return navigator.language?.toLowerCase().startsWith("pt") ? "pt" : "en";
+}
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [lang, setLangState] = useState<Lang>("pt");
+  useEffect(() => {
+    setLangState(detect());
+  }, []);
+  const setLang = (l: Lang) => {
+    setLangState(l);
+    if (typeof window !== "undefined") window.localStorage.setItem("silentcut.lang", l);
+  };
+  const value = useMemo<Ctx>(() => ({ lang, setLang, t: dict[lang] as Dict }), [lang]);
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+export function useI18n() {
+  const ctx = useContext(I18nContext);
+  if (!ctx) throw new Error("useI18n must be used within I18nProvider");
+  return ctx;
+}

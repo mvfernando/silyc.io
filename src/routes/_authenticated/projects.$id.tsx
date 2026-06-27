@@ -583,6 +583,34 @@ function ProjectDetail() {
     triggerDownload(blob, `${project.name}-logs.txt`);
   };
 
+  const exportActivity = () => {
+    if (!project) return;
+    const payload = {
+      project: { id: project.id, name: project.name },
+      exportedAt: new Date().toISOString(),
+      activity: activity.map((e) => ({
+        ts: new Date(e.ts).toISOString(),
+        action: e.action,
+        state: e.state,
+        detail: e.detail,
+        versionId: e.versionId,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    triggerDownload(blob, `${project.name}-activity.json`);
+  };
+
+  const exportAudioJobs = () => {
+    if (!project) return;
+    const payload = {
+      project: { id: project.id, name: project.name },
+      exportedAt: new Date().toISOString(),
+      jobs: audioJobs,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    triggerDownload(blob, `${project.name}-audio-jobs.json`);
+  };
+
   const stats = (project?.stats ?? {}) as ProjectStats;
 
   return (

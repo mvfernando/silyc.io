@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,40 @@ function ProjectDetail() {
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
+  type ActivityEvent = {
+    id: string;
+    ts: number;
+    action: string;
+    state: "started" | "completed" | "failed" | "external";
+    detail?: string;
+    versionId?: string;
+  };
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const pushActivity = useCallback((e: Omit<ActivityEvent, "id" | "ts">) => {
+    setActivity((prev) =>
+      [{ ...e, id: crypto.randomUUID(), ts: Date.now() }, ...prev].slice(0, 50),
+    );
+  }, []);
+
+  // Sync indicator + realtime/polling fallback
+  type SyncState = "live" | "syncing" | "polling" | "offline";
+  const [syncState, setSyncState] = useState<SyncState>("syncing");
+  const [realtimeOk, setRealtimeOk] = useState(false);
+  const syncingTimer = useRef<number | null>(null);
+  const flashSyncing = useCallback(() => {
+    setSyncState("syncing");
+    if (syncingTimer.current) window.clearTimeout(syncingTimer.current);
+    syncingTimer.current = window.setTimeout(() => {
+      setSyncState(realtimeOk ? "live" : "polling");
+    }, 800);
+  }, [realtimeOk]);
+  useEffect(() => {
+    setSyncState(realtimeOk ? "live" : "polling");
+  }, [realtimeOk]);
+  useEffect(() => () => {
+    if (syncingTimer.current) window.clearTimeout(syncingTimer.current);
+  }, []);
+
   const openPreview = () => {
     setPreviewOpen(true);
     requestAnimationFrame(() => {
@@ -72,6 +106,7 @@ function ProjectDetail() {
       if (error) throw error;
       return data;
     },
+    refetchInterval: realtimeOk ? false : 10_000,
   });
 
   const { data: versions } = useQuery({
@@ -85,7 +120,58 @@ function ProjectDetail() {
       if (error) throw error;
       return (data ?? []) as unknown as Version[];
     },
+    refetchInterval: realtimeOk ? false : 10_000,
   });
+
+  // Detect external changes (status / new version) and toast + log activity
+  const prevStatusRef = useRef<string | null>(null);
+  const prevVersionIdsRef = useRef<Set<string>>(new Set());
+  const localActionsRef = useRef(0);
+  useEffect(() => {
+    if (!project) return;
+    const prev = prevStatusRef.current;
+    const next = project.status as string;
+    if (prev && prev !== next && localActionsRef.current === 0) {
+      pushActivity({
+        action: t.activity_action_status,
+        state: "external",
+        detail: `${prev} → ${next}`,
+      });
+      toast.info(`${t.ext_status_changed} ${next}`);
+    }
+    prevStatusRef.current = next;
+  }, [project, pushActivity, t]);
+  useEffect(() => {
+    if (!versions) return;
+    const knownIds = prevVersionIdsRef.current;
+    if (knownIds.size === 0) {
+      versions.forEach((v) => knownIds.add(v.id));
+      return;
+    }
+    const fresh = versions.filter((v) => !knownIds.has(v.id));
+    if (fresh.length && localActionsRef.current === 0) {
+      fresh.forEach((v) => {
+        pushActivity({
+          action: t.activity_action_new_version,
+          state: "external",
+          detail: v.label,
+          versionId: v.id,
+        });
+      });
+      const first = fresh[0];
+      toast.info(`${t.ext_new_version}: ${first.label}`, {
+        action: {
+          label: t.view_in_history,
+          onClick: () => {
+            document
+              .getElementById(`version-${first.id}`)
+              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          },
+        },
+      });
+    }
+    versions.forEach((v) => knownIds.add(v.id));
+  }, [versions, pushActivity, t]);
 
   const activeOutputPath = useMemo(() => {
     if (!project) return null;
@@ -119,6 +205,7 @@ function ProjectDetail() {
         "postgres_changes",
         { event: "*", schema: "public", table: "projects", filter: `id=eq.${id}` },
         () => {
+          flashSyncing();
           qc.invalidateQueries({ queryKey: ["project", id] });
           qc.invalidateQueries({ queryKey: ["projects"] });
         },
@@ -127,25 +214,38 @@ function ProjectDetail() {
         "postgres_changes",
         { event: "*", schema: "public", table: "project_versions", filter: `project_id=eq.${id}` },
         () => {
+          flashSyncing();
           qc.invalidateQueries({ queryKey: ["project-versions", id] });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setRealtimeOk(true);
+        else if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          setRealtimeOk(false);
+        }
+      });
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [id, qc]);
+  }, [id, qc, flashSyncing]);
 
   const handleDelete = async () => {
     if (!project) return;
     setDeleting(true);
     setDeleteError(null);
+    localActionsRef.current++;
+    pushActivity({ action: t.activity_action_delete, state: "started" });
     const versionPaths = (versions ?? []).map((v) => v.output_path).filter(Boolean) as string[];
     const paths = [project.source_path, project.output_path, ...versionPaths].filter(Boolean) as string[];
     try {
       if (paths.length) await supabase.storage.from("videos").remove(paths);
       const { error } = await supabase.from("projects").delete().eq("id", project.id);
       if (error) throw error;
+      pushActivity({ action: t.activity_action_delete, state: "completed" });
       toast.success(t.deleted, {
         action: { label: t.nav_projects, onClick: () => navigate({ to: "/projects" }) },
       });
@@ -153,11 +253,14 @@ function ProjectDetail() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : t.err_delete;
       setDeleteError(msg);
+      pushActivity({ action: t.activity_action_delete, state: "failed", detail: msg });
       toast.error(t.err_delete, {
         description: msg,
         action: { label: t.try_again, onClick: () => handleDelete() },
       });
       setDeleting(false);
+    } finally {
+      localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }
   };
 
@@ -165,6 +268,8 @@ function ProjectDetail() {
     if (!project || !v.output_path) return;
     setRestoringId(v.id);
     setRestoreError(null);
+    localActionsRef.current++;
+    pushActivity({ action: t.activity_action_restore, state: "started", detail: v.label, versionId: v.id });
     try {
       const { error } = await supabase
         .from("projects")
@@ -177,6 +282,7 @@ function ProjectDetail() {
         qc.invalidateQueries({ queryKey: ["project-versions", id] }),
         qc.invalidateQueries({ queryKey: ["projects"] }),
       ]);
+      pushActivity({ action: t.activity_action_restore, state: "completed", detail: v.label, versionId: v.id });
       toast.success(t.versions_restore, {
         action: {
           label: t.preview_open,
@@ -186,12 +292,14 @@ function ProjectDetail() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : t.err_restore;
       setRestoreError({ id: v.id, msg });
+      pushActivity({ action: t.activity_action_restore, state: "failed", detail: msg, versionId: v.id });
       toast.error(t.err_restore, {
         description: msg,
         action: { label: t.try_again, onClick: () => setAsCurrent(v) },
       });
     } finally {
       setRestoringId(null);
+      localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }
   };
 
@@ -209,6 +317,8 @@ function ProjectDetail() {
     if (!urls.output || !project) return;
     setEnhancing(true);
     setEnhanceError(null);
+    localActionsRef.current++;
+    pushActivity({ action: t.activity_action_enhance, state: "started" });
     try {
       const { url } = await enhanceFn({ data: { audioUrl: urls.output } });
       // Download enhanced audio and upload to storage as a new version asset.
@@ -233,6 +343,7 @@ function ProjectDetail() {
         qc.invalidateQueries({ queryKey: ["project-versions", id] }),
         qc.invalidateQueries({ queryKey: ["project", id] }),
       ]);
+      pushActivity({ action: t.activity_action_enhance, state: "completed", detail: label });
       toast.success(t.ai_enhance_done, {
         action: {
           label: t.view_versions,
@@ -246,12 +357,14 @@ function ProjectDetail() {
     } catch (err) {
       const mapped = mapError(err, lang);
       setEnhanceError(mapped.title);
+      pushActivity({ action: t.activity_action_enhance, state: "failed", detail: mapped.title });
       toast.error(mapped.title, {
         description: mapped.action,
         action: { label: t.try_again, onClick: () => handleEnhanceAudio() },
       });
     } finally {
       setEnhancing(false);
+      localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }
   };
 
@@ -317,7 +430,10 @@ function ProjectDetail() {
           <>
             <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-semibold tracking-tight">{project.name}</h1>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-3xl font-semibold tracking-tight">{project.name}</h1>
+                  <SyncIndicator state={syncState} t={t} />
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {new Date(project.created_at).toLocaleString()}
                 </p>
@@ -403,6 +519,8 @@ function ProjectDetail() {
               restoringId={restoringId}
               restoreError={restoreError}
             />
+
+            <ActivityPanel t={t} events={activity} />
           </>
         )}
       </main>
@@ -518,6 +636,109 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
+function SyncIndicator({
+  state,
+  t,
+}: {
+  state: "live" | "syncing" | "polling" | "offline";
+  t: ReturnType<typeof useI18n>["t"];
+}) {
+  const map = {
+    live: { label: t.sync_live, dot: "bg-emerald-500", ring: "ring-emerald-500/30", pulse: false },
+    syncing: { label: t.sync_syncing, dot: "bg-primary", ring: "ring-primary/30", pulse: true },
+    polling: { label: t.sync_polling, dot: "bg-amber-500", ring: "ring-amber-500/30", pulse: false },
+    offline: { label: t.sync_offline, dot: "bg-muted-foreground", ring: "ring-muted-foreground/30", pulse: false },
+  }[state];
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/40 px-2.5 py-1 text-[11px] text-muted-foreground"
+    >
+      <span className={`relative inline-block h-1.5 w-1.5 rounded-full ${map.dot} ring-2 ${map.ring}`}>
+        {map.pulse && (
+          <span className={`absolute inset-0 animate-ping rounded-full ${map.dot} opacity-60`} />
+        )}
+      </span>
+      {map.label}
+    </span>
+  );
+}
+
+type ActivityEvent = {
+  id: string;
+  ts: number;
+  action: string;
+  state: "started" | "completed" | "failed" | "external";
+  detail?: string;
+  versionId?: string;
+};
+
+function ActivityPanel({
+  t,
+  events,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  events: ActivityEvent[];
+}) {
+  const stateLabel = {
+    started: t.activity_started,
+    completed: t.activity_completed,
+    failed: t.activity_failed,
+    external: t.activity_external,
+  };
+  const stateClass = {
+    started: "text-muted-foreground",
+    completed: "text-emerald-500",
+    failed: "text-destructive",
+    external: "text-primary",
+  };
+  return (
+    <section className="mt-10">
+      <h2 className="text-lg font-semibold tracking-tight">{t.activity_title}</h2>
+      {events.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">{t.activity_empty}</p>
+      ) : (
+        <ol className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card/40">
+          {events.map((e) => (
+            <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{e.action}</span>
+                  <span className={`text-[11px] uppercase tracking-wider ${stateClass[e.state]}`}>
+                    {stateLabel[e.state]}
+                  </span>
+                </div>
+                {e.detail && (
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{e.detail}</div>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                {e.versionId && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary underline underline-offset-2"
+                    onClick={() =>
+                      document
+                        .getElementById(`version-${e.versionId}`)
+                        ?.scrollIntoView({ behavior: "smooth", block: "center" })
+                    }
+                  >
+                    {t.view_in_history}
+                  </button>
+                )}
+                <time className="tabular-nums text-xs text-muted-foreground">
+                  {new Date(e.ts).toLocaleTimeString()}
+                </time>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 function SideBySide({
   t, source, output,
 }: { t: ReturnType<typeof useI18n>["t"]; source?: string; output?: string }) {
@@ -628,7 +849,11 @@ function VersionHistory({
             const eo = v.export_options as Record<string, string>;
             const desc = [eo.container, eo.videoCodec, eo.resolution].filter(Boolean).join(" · ");
             return (
-              <li key={v.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
+                <li
+                  key={v.id}
+                  id={`version-${v.id}`}
+                  className="flex scroll-mt-24 flex-wrap items-center justify-between gap-4 p-4"
+                >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-sm">{v.label}</span>

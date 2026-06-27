@@ -78,7 +78,7 @@ function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
             className="mt-8 flex flex-wrap items-center gap-3"
           >
             <Button asChild size="lg">
-              <Link to="/auth">{t.hero_cta}</Link>
+              <Link to="/app">{t.hero_cta}</Link>
             </Button>
             <Button asChild size="lg" variant="ghost">
               <a href="#features">{t.hero_secondary}</a>
@@ -216,7 +216,7 @@ function CtaStrip({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
         <h2 className="text-4xl font-semibold tracking-tight">{t.hero_title}</h2>
         <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">{t.hero_sub}</p>
         <Button asChild size="lg" className="mt-8">
-          <Link to="/auth">{t.hero_cta}</Link>
+          <Link to="/app">{t.hero_cta}</Link>
         </Button>
       </div>
     </section>

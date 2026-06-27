@@ -88,3 +88,21 @@ export const pollEnhanceAudio = createServerFn({ method: "POST" })
     }
     return toStatus(json);
   });
+
+export const cancelEnhanceAudio = createServerFn({ method: "POST" })
+  .inputValidator((input: { id: string }) => input)
+  .handler(async ({ data }): Promise<EnhanceJobStatus> => {
+    const token = process.env.REPLICATE_API_TOKEN;
+    if (!token) throw new Error("Replicate API token not configured");
+    const res = await fetch(`${REPLICATE_BASE}/predictions/${data.id}/cancel`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = (await res.json()) as PredictionResponse & { detail?: string };
+    if (!res.ok) {
+      throw new Error(
+        `Replicate ${res.status}: ${json.detail ?? json.error ?? "cancel failed"}`,
+      );
+    }
+    return toStatus(json);
+  });

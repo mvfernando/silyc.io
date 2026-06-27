@@ -342,89 +342,142 @@ function ProjectDetail() {
   );
   const activeStats: ProjectStats = (activeVersion?.stats as ProjectStats) ?? (project?.stats as ProjectStats) ?? {};
 
+  const activePredictionRef = useRef<string | null>(null);
+
+  const upsertAudioJob = async (jobId: string, patch: Partial<AudioJobRow>) => {
+    await supabase
+      .from("audio_jobs" as never)
+      .update(patch as never)
+      .eq("id", jobId);
+    qc.invalidateQueries({ queryKey: ["audio-jobs", id] });
+  };
+
+  const insertAudioJob = async (row: {
+    attempt: number;
+    status: AudioJobRow["status"];
+  }): Promise<string | null> => {
+    if (!project) return null;
+    const { data, error } = await supabase
+      .from("audio_jobs" as never)
+      .insert({
+        project_id: project.id,
+        user_id: project.user_id,
+        attempt: row.attempt,
+        status: row.status,
+      } as never)
+      .select("id")
+      .single();
+    if (error) throw error;
+    qc.invalidateQueries({ queryKey: ["audio-jobs", id] });
+    return (data as unknown as { id: string }).id;
+  };
+
+  const handleCancelEnhance = async () => {
+    if (!activePredictionRef.current) {
+      cancelRequestedRef.current = true;
+      return;
+    }
+    setCanceling(true);
+    cancelRequestedRef.current = true;
+    try {
+      await cancelEnhanceFn({ data: { id: activePredictionRef.current } });
+    } catch {
+      /* best-effort: loop will still detect cancel flag */
+    } finally {
+      setCanceling(false);
+    }
+  };
+
   const handleEnhanceAudio = async () => {
     if (!urls.output || !project) return;
     setEnhancing(true);
     setEnhanceError(null);
+    cancelRequestedRef.current = false;
+    activePredictionRef.current = null;
     localActionsRef.current++;
     pushActivity({ action: t.activity_action_enhance, state: "started" });
     const MAX_ATTEMPTS = 3;
-    const EXPECTED_MS = 60_000; // typical resemble-enhance runtime
+    const EXPECTED_MS = 60_000;
     let lastError: unknown = null;
+    let canceled = false;
     try {
       let enhancedUrl: string | null = null;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        const jobLocalId = crypto.randomUUID();
+        if (cancelRequestedRef.current) { canceled = true; break; }
         const jobStart = Date.now();
-        updateAudioJobs((prev) => [
-          {
-            id: jobLocalId,
-            startedAt: jobStart,
-            status: "running",
-            attempt,
-          },
-          ...prev,
-        ]);
-        setEnhanceProgress({ phase: "queued", percent: 2, attempt, maxAttempts: MAX_ATTEMPTS });
+        const jobId = await insertAudioJob({ attempt, status: "running" });
+        setEnhanceProgress({ phase: "queued", percent: 2, attempt, maxAttempts: MAX_ATTEMPTS, startedAt: jobStart });
         try {
           const created = await startEnhanceFn({ data: { audioUrl: urls.output } });
-          updateAudioJobs((prev) =>
-            prev.map((j) => (j.id === jobLocalId ? { ...j, predictionId: created.id } : j)),
-          );
+          activePredictionRef.current = created.id;
+          if (jobId) await upsertAudioJob(jobId, { prediction_id: created.id });
           let current = created;
-          while (
-            current.status === "starting" ||
-            current.status === "processing"
-          ) {
+          while (current.status === "starting" || current.status === "processing") {
+            if (cancelRequestedRef.current) {
+              try { await cancelEnhanceFn({ data: { id: current.id } }); } catch { /* ignore */ }
+              canceled = true;
+              if (jobId) await upsertAudioJob(jobId, {
+                status: "canceled",
+                ended_at: new Date().toISOString(),
+              });
+              break;
+            }
             const elapsed = Date.now() - jobStart;
             const pct = Math.min(95, Math.round((elapsed / EXPECTED_MS) * 90) + 5);
             setEnhanceProgress({
               phase: current.status === "starting" ? "queued" : "processing",
-              percent: pct,
-              attempt,
-              maxAttempts: MAX_ATTEMPTS,
+              percent: pct, attempt, maxAttempts: MAX_ATTEMPTS, startedAt: jobStart,
             });
             await new Promise((r) => setTimeout(r, 2500));
             current = await pollEnhanceFn({ data: { id: current.id } });
           }
+          if (canceled) break;
+          if (current.status === "canceled") {
+            canceled = true;
+            if (jobId) await upsertAudioJob(jobId, {
+              status: "canceled",
+              ended_at: new Date().toISOString(),
+            });
+            break;
+          }
           if (current.status !== "succeeded" || !current.url) {
             throw new Error(current.error ?? `Replicate ${current.status}`);
           }
-          setEnhanceProgress({ phase: "finalizing", percent: 97, attempt, maxAttempts: MAX_ATTEMPTS });
+          setEnhanceProgress({ phase: "finalizing", percent: 97, attempt, maxAttempts: MAX_ATTEMPTS, startedAt: jobStart });
           enhancedUrl = current.url;
-          updateAudioJobs((prev) =>
-            prev.map((j) =>
-              j.id === jobLocalId
-                ? { ...j, status: "succeeded", endedAt: Date.now() }
-                : j,
-            ),
-          );
+          if (jobId) await upsertAudioJob(jobId, {
+            status: "succeeded",
+            ended_at: new Date().toISOString(),
+          });
           break;
         } catch (err) {
           lastError = err;
           const msg = err instanceof Error ? err.message : String(err);
-          updateAudioJobs((prev) =>
-            prev.map((j) =>
-              j.id === jobLocalId
-                ? { ...j, status: "failed", endedAt: Date.now(), error: msg }
-                : j,
-            ),
-          );
+          if (jobId) await upsertAudioJob(jobId, {
+            status: "failed",
+            ended_at: new Date().toISOString(),
+            error: msg,
+          });
           pushActivity({
             action: t.activity_action_enhance,
             state: "failed",
             detail: `${t.audio_attempt} ${attempt}/${MAX_ATTEMPTS}: ${msg}`,
           });
-          if (attempt < MAX_ATTEMPTS) {
+          if (attempt < MAX_ATTEMPTS && !cancelRequestedRef.current) {
             const backoff = 1500 * 2 ** (attempt - 1);
             await new Promise((r) => setTimeout(r, backoff));
             continue;
           }
+          if (cancelRequestedRef.current) { canceled = true; break; }
           throw err;
         }
       }
+      if (canceled) {
+        pushActivity({ action: t.activity_action_cancel, state: "completed" });
+        toast.info(t.audio_canceled_toast);
+        return;
+      }
       if (!enhancedUrl) throw lastError ?? new Error("enhance failed");
-      // Download enhanced audio and upload to storage as a new version asset.
       const url = enhancedUrl;
       const blob = await fetch(url).then((r) => r.blob());
       const path = `${project.user_id}/${project.id}/ai-audio-${Date.now()}.wav`;
@@ -443,12 +496,18 @@ function ProjectDetail() {
         stats: { ...activeStats, aiAudio: true },
         status: "done",
       } as never);
-      updateAudioJobs((prev) => {
-        const [head, ...rest] = prev;
-        if (!head) return prev;
-        return [{ ...head, versionLabel: label }, ...rest];
-      });
-      setEnhanceProgress({ phase: "finalizing", percent: 100, attempt: MAX_ATTEMPTS, maxAttempts: MAX_ATTEMPTS });
+      // tag the most recent succeeded job for this project with the new version label
+      const { data: latest } = await supabase
+        .from("audio_jobs" as never)
+        .select("id")
+        .eq("project_id", project.id)
+        .eq("status", "succeeded")
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const latestId = (latest as unknown as { id: string } | null)?.id;
+      if (latestId) await upsertAudioJob(latestId, { version_label: label });
+      setEnhanceProgress((p) => p ? { ...p, phase: "finalizing", percent: 100 } : p);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["project-versions", id] }),
         qc.invalidateQueries({ queryKey: ["project", id] }),
@@ -458,9 +517,7 @@ function ProjectDetail() {
         action: {
           label: t.view_versions,
           onClick: () => {
-            document
-              .getElementById("version-history")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            document.getElementById("version-history")?.scrollIntoView({ behavior: "smooth", block: "start" });
           },
         },
       });
@@ -474,6 +531,7 @@ function ProjectDetail() {
       });
     } finally {
       setEnhancing(false);
+      activePredictionRef.current = null;
       setTimeout(() => setEnhanceProgress(null), 1200);
       localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }

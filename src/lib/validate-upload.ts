@@ -9,6 +9,10 @@ export type UploadValidation = {
   width: number;
   height: number;
   hasAudio: boolean | "unknown";
+  mime: string;
+  ext: string;
+  sizeMB: number;
+  checks: ValidationCheck[];
   reasonKey?:
     | "err_validate_unsupported"
     | "err_validate_no_video"
@@ -19,22 +23,47 @@ export type UploadValidation = {
   raw?: string;
 };
 
+export type ValidationCheck = {
+  id:
+    | "container"
+    | "video_track"
+    | "audio_track"
+    | "duration"
+    | "size"
+    | "decode";
+  status: "pass" | "fail" | "warn";
+  detail: string;
+};
+
 const ALLOWED_EXT = ["mp4", "mov", "m4v", "webm", "mkv", "avi"];
 const MAX_DURATION_SEC = 60 * 60; // 1 hour ceiling for the local engine
 
 export async function validateUpload(file: File): Promise<UploadValidation> {
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+  const sizeMB = file.size / 1024 / 1024;
+  const checks: ValidationCheck[] = [];
   if (!file.type.startsWith("video/") && !ALLOWED_EXT.includes(ext)) {
+    checks.push({ id: "container", status: "fail", detail: `${file.type || "?"} / .${ext}` });
     return {
       ok: false,
       durationSec: 0,
       width: 0,
       height: 0,
       hasAudio: "unknown",
+      mime: file.type,
+      ext,
+      sizeMB,
+      checks,
       reasonKey: "err_validate_unsupported",
       raw: `mime=${file.type || "?"} ext=${ext}`,
     };
   }
+  checks.push({ id: "container", status: "pass", detail: `${file.type || "video/*"} · .${ext}` });
+  checks.push({
+    id: "size",
+    status: sizeMB > 220 ? "fail" : sizeMB > 150 ? "warn" : "pass",
+    detail: `${sizeMB.toFixed(1)} MB`,
+  });
 
   const url = URL.createObjectURL(file);
   const video = document.createElement("video");
@@ -59,35 +88,56 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
     const height = video.videoHeight;
 
     if (!width || !height) {
+      checks.push({ id: "video_track", status: "fail", detail: "no decodable video track" });
       return {
         ok: false,
         durationSec,
         width,
         height,
         hasAudio: "unknown",
+        mime: file.type,
+        ext,
+        sizeMB,
+        checks,
         reasonKey: "err_validate_no_video",
       };
     }
+    checks.push({ id: "video_track", status: "pass", detail: `${width}×${height}` });
     if (durationSec <= 0.1) {
+      checks.push({ id: "duration", status: "fail", detail: `${durationSec.toFixed(2)}s` });
       return {
         ok: false,
         durationSec,
         width,
         height,
         hasAudio: "unknown",
+        mime: file.type,
+        ext,
+        sizeMB,
+        checks,
         reasonKey: "err_validate_duration",
       };
     }
     if (durationSec > MAX_DURATION_SEC) {
+      checks.push({ id: "duration", status: "fail", detail: `${Math.round(durationSec / 60)} min (max 60)` });
       return {
         ok: false,
         durationSec,
         width,
         height,
         hasAudio: "unknown",
+        mime: file.type,
+        ext,
+        sizeMB,
+        checks,
         reasonKey: "err_validate_too_long",
       };
     }
+    checks.push({
+      id: "duration",
+      status: "pass",
+      detail: `${Math.floor(durationSec / 60)}m ${Math.round(durationSec % 60)}s`,
+    });
 
     // Best-effort audio detection. Browsers expose either audioTracks,
     // mozHasAudio, or webkitAudioDecodedByteCount after a brief play.
@@ -114,24 +164,44 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
     }
 
     if (hasAudio === false) {
+      checks.push({ id: "audio_track", status: "fail", detail: "no audio stream" });
       return {
         ok: false,
         durationSec,
         width,
         height,
         hasAudio,
+        mime: file.type,
+        ext,
+        sizeMB,
+        checks,
         reasonKey: "err_validate_no_audio",
       };
     }
+    checks.push({
+      id: "audio_track",
+      status: hasAudio === true ? "pass" : "warn",
+      detail: hasAudio === true ? "audio present" : "could not verify in this browser",
+    });
+    checks.push({ id: "decode", status: "pass", detail: "metadata decoded" });
 
-    return { ok: true, durationSec, width, height, hasAudio };
+    return { ok: true, durationSec, width, height, hasAudio, mime: file.type, ext, sizeMB, checks };
   } catch (err) {
+    checks.push({
+      id: "decode",
+      status: "fail",
+      detail: err instanceof Error ? err.message : String(err),
+    });
     return {
       ok: false,
       durationSec: 0,
       width: 0,
       height: 0,
       hasAudio: "unknown",
+      mime: file.type,
+      ext,
+      sizeMB,
+      checks,
       reasonKey: "err_validate_decode",
       raw: err instanceof Error ? err.message : String(err),
     };

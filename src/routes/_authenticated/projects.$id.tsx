@@ -351,6 +351,7 @@ function ProjectDetail() {
               <AIEnhanceCard
                 t={t}
                 busy={enhancing}
+                error={enhanceError}
                 onRun={handleEnhanceAudio}
               />
             )}
@@ -368,6 +369,7 @@ function ProjectDetail() {
               onSetCurrent={setAsCurrent}
               onReprocess={reprocess}
               restoringId={restoringId}
+              restoreError={restoreError}
             />
           </>
         )}

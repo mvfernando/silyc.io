@@ -157,7 +157,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLangState(l);
     if (typeof window !== "undefined") window.localStorage.setItem("silentcut.lang", l);
   };
-  const value = useMemo<Ctx>(() => ({ lang, setLang, t: dict[lang] }), [lang]);
+  const value = useMemo<Ctx>(() => ({ lang, setLang, t: dict[lang] as Dict }), [lang]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

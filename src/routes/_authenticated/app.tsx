@@ -38,7 +38,7 @@ import {
 } from "@/lib/resume-store";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 import { mapError, type MappedError } from "@/lib/error-mapper";
-import { validateUpload, withBackoff, isTransientCloudError } from "@/lib/validate-upload";
+import { validateUpload, withBackoff, isTransientCloudError, type UploadValidation, type ValidationCheck } from "@/lib/validate-upload";
 
 const MAX_BYTES = 220 * 1024 * 1024;
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
@@ -102,6 +102,7 @@ function AppPage() {
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
   const [validating, setValidating] = useState(false);
+  const [validation, setValidation] = useState<UploadValidation | null>(null);
 
   const appendLog = useCallback((entry: Omit<JobLogEntry, "ts">) => {
     setLogs((prev) => [...prev, { ts: Date.now(), ...entry }]);
@@ -181,8 +182,10 @@ function AppPage() {
     if (!f.type.startsWith("video/")) return toast.error(t.err_file_type);
     if (f.size > MAX_BYTES) return toast.error(t.err_file_size);
     setValidating(true);
+    setValidation(null);
     try {
       const v = await validateUpload(f);
+      setValidation(v);
       if (!v.ok) {
         const msg = v.reasonKey ? t[v.reasonKey] : t.err_file_type;
         toast.error(msg);
@@ -753,6 +756,8 @@ function AppPage() {
 
         <CloudPanel t={t} cloud={cloud} onChange={setCloud} env={CLOUD_ENV} />
 
+        {validation && <ValidationPanel t={t} v={validation} />}
+
         <ExportPanel value={exportOpts} onChange={setExportOpts} />
 
         <CreditsPanel
@@ -1283,5 +1288,59 @@ function ErrorBanner({
         </Button>
       </div>
     </div>
+  );
+}
+
+function ValidationPanel({
+  t,
+  v,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  v: UploadValidation;
+}) {
+  const labels: Record<ValidationCheck["id"], string> = {
+    container: t.validation_check_container,
+    video_track: t.validation_check_video_track,
+    audio_track: t.validation_check_audio_track,
+    duration: t.validation_check_duration,
+    size: t.validation_check_size,
+    decode: t.validation_check_decode,
+  };
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {t.validation_panel_title}
+        </h2>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+            v.ok ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"
+          }`}
+        >
+          {v.ok ? "OK" : "Fail"}
+        </span>
+      </div>
+      <ul className="mt-3 divide-y divide-border/60 text-sm">
+        {v.checks.map((c) => (
+          <li key={c.id} className="flex items-center justify-between gap-3 py-2">
+            <div className="flex items-center gap-3">
+              <span
+                className={`grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold ${
+                  c.status === "pass"
+                    ? "bg-primary/20 text-primary"
+                    : c.status === "warn"
+                      ? "bg-amber-500/20 text-amber-400"
+                      : "bg-destructive/20 text-destructive"
+                }`}
+              >
+                {c.status === "pass" ? "✓" : c.status === "warn" ? "!" : "✕"}
+              </span>
+              <span className="text-foreground">{labels[c.id]}</span>
+            </div>
+            <span className="font-mono text-[11px] text-muted-foreground">{c.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

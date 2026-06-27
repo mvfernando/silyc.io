@@ -636,6 +636,109 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
+function SyncIndicator({
+  state,
+  t,
+}: {
+  state: "live" | "syncing" | "polling" | "offline";
+  t: ReturnType<typeof useI18n>["t"];
+}) {
+  const map = {
+    live: { label: t.sync_live, dot: "bg-emerald-500", ring: "ring-emerald-500/30", pulse: false },
+    syncing: { label: t.sync_syncing, dot: "bg-primary", ring: "ring-primary/30", pulse: true },
+    polling: { label: t.sync_polling, dot: "bg-amber-500", ring: "ring-amber-500/30", pulse: false },
+    offline: { label: t.sync_offline, dot: "bg-muted-foreground", ring: "ring-muted-foreground/30", pulse: false },
+  }[state];
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/40 px-2.5 py-1 text-[11px] text-muted-foreground"
+    >
+      <span className={`relative inline-block h-1.5 w-1.5 rounded-full ${map.dot} ring-2 ${map.ring}`}>
+        {map.pulse && (
+          <span className={`absolute inset-0 animate-ping rounded-full ${map.dot} opacity-60`} />
+        )}
+      </span>
+      {map.label}
+    </span>
+  );
+}
+
+type ActivityEvent = {
+  id: string;
+  ts: number;
+  action: string;
+  state: "started" | "completed" | "failed" | "external";
+  detail?: string;
+  versionId?: string;
+};
+
+function ActivityPanel({
+  t,
+  events,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  events: ActivityEvent[];
+}) {
+  const stateLabel = {
+    started: t.activity_started,
+    completed: t.activity_completed,
+    failed: t.activity_failed,
+    external: t.activity_external,
+  };
+  const stateClass = {
+    started: "text-muted-foreground",
+    completed: "text-emerald-500",
+    failed: "text-destructive",
+    external: "text-primary",
+  };
+  return (
+    <section className="mt-10">
+      <h2 className="text-lg font-semibold tracking-tight">{t.activity_title}</h2>
+      {events.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">{t.activity_empty}</p>
+      ) : (
+        <ol className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card/40">
+          {events.map((e) => (
+            <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{e.action}</span>
+                  <span className={`text-[11px] uppercase tracking-wider ${stateClass[e.state]}`}>
+                    {stateLabel[e.state]}
+                  </span>
+                </div>
+                {e.detail && (
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{e.detail}</div>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                {e.versionId && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary underline underline-offset-2"
+                    onClick={() =>
+                      document
+                        .getElementById(`version-${e.versionId}`)
+                        ?.scrollIntoView({ behavior: "smooth", block: "center" })
+                    }
+                  >
+                    {t.view_in_history}
+                  </button>
+                )}
+                <time className="tabular-nums text-xs text-muted-foreground">
+                  {new Date(e.ts).toLocaleTimeString()}
+                </time>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 function SideBySide({
   t, source, output,
 }: { t: ReturnType<typeof useI18n>["t"]; source?: string; output?: string }) {

@@ -771,6 +771,7 @@ function ResumePanel({
   matched: boolean;
   onDiscard: () => void;
 }) {
+  const completed = state.completedSteps ?? lastPhaseToCompletedSteps(state.lastPhase);
   return (
     <div className="mt-6 rounded-xl border border-primary/30 bg-primary/5 p-5">
       <div className="flex items-start justify-between gap-4">
@@ -785,6 +786,12 @@ function ResumePanel({
           <p className="mt-3 text-xs text-muted-foreground">
             {matched ? t.resume_match : t.resume_no_match}
           </p>
+          <div className="mt-4">
+            <div className="mb-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+              {t.resume_progress}
+            </div>
+            <StepIndicator active={null} completed={completed} t={t} />
+          </div>
         </div>
         <Button variant="ghost" size="sm" onClick={onDiscard}>
           {t.resume_discard}
@@ -828,11 +835,13 @@ function CreditsPanel({
   estimate,
   detail,
   actual,
+  explanation,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   estimate: number;
   detail: string;
   actual: number | null;
+  explanation: string;
 }) {
   return (
     <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
@@ -861,6 +870,12 @@ function CreditsPanel({
           </div>
         </div>
       </div>
+      <details className="mt-4 rounded-lg border border-border/60 bg-background/20 p-3 text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none text-foreground">
+          {t.credits_how}
+        </summary>
+        <p className="mt-2 leading-relaxed">{explanation}</p>
+      </details>
     </section>
   );
 }
@@ -998,7 +1013,15 @@ function SelectField({
   );
 }
 
-function StepIndicator({ active, t }: { active: StepKey | null; t: ReturnType<typeof useI18n>["t"] }) {
+function StepIndicator({
+  active,
+  completed,
+  t,
+}: {
+  active: StepKey | null;
+  completed?: ResumeStepKey[];
+  t: ReturnType<typeof useI18n>["t"];
+}) {
   const steps: { key: StepKey; label: string }[] = [
     { key: "silences", label: t.step_silences },
     { key: "audio", label: t.step_audio },
@@ -1006,10 +1029,11 @@ function StepIndicator({ active, t }: { active: StepKey | null; t: ReturnType<ty
     { key: "export", label: t.step_export },
   ];
   const idx = active ? steps.findIndex((s) => s.key === active) : -1;
+  const completedSet = new Set<string>(completed ?? []);
   return (
     <ol className="flex items-center gap-3 text-xs">
       {steps.map((s, i) => {
-        const done = i < idx;
+        const done = i < idx || completedSet.has(s.key);
         const current = i === idx;
         return (
           <li key={s.key} className="flex flex-1 items-center gap-3">
@@ -1029,5 +1053,132 @@ function StepIndicator({ active, t }: { active: StepKey | null; t: ReturnType<ty
         );
       })}
     </ol>
+  );
+}
+
+function JobLogsPanel({
+  t,
+  logs,
+  attempts,
+  onClear,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  logs: JobLogEntry[];
+  attempts: number;
+  onClear: () => void;
+}) {
+  const fmt = (ts: number) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString();
+  };
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {t.logs_title}
+          </h2>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            {t.logs_attempts} {attempts}
+          </span>
+        </div>
+        {logs.length > 0 && (
+          <button
+            onClick={onClear}
+            className="text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            {t.logs_clear}
+          </button>
+        )}
+      </div>
+      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-border/60 bg-background/40 p-3 font-mono text-[11px] leading-relaxed">
+        {logs.length === 0 ? (
+          <p className="text-muted-foreground">{t.logs_empty}</p>
+        ) : (
+          <ul className="space-y-1">
+            {logs.map((l, i) => {
+              const color =
+                l.level === "error"
+                  ? "text-destructive"
+                  : l.level === "warn"
+                    ? "text-amber-400"
+                    : "text-muted-foreground";
+              return (
+                <li key={i} className="flex gap-3">
+                  <span className="shrink-0 text-muted-foreground/70 tabular-nums">{fmt(l.ts)}</span>
+                  <span className={`shrink-0 uppercase ${color}`}>[{l.step}]</span>
+                  <span className="text-foreground">{l.message}</span>
+                  {typeof l.durationMs === "number" && (
+                    <span className="ml-auto shrink-0 text-muted-foreground/70 tabular-nums">
+                      {(l.durationMs / 1000).toFixed(2)}s
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type ExportHistoryRow = {
+  id: string;
+  label: string;
+  created_at: string;
+  stats: { credits?: number; cloud?: boolean; finalDuration?: number; removedSeconds?: number };
+  export_options: { container?: string; resolution?: string };
+};
+
+function ExportsHistoryPanel({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
+  const [rows, setRows] = useState<ExportHistoryRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("project_versions" as never)
+        .select("id,label,created_at,stats,export_options")
+        .order("created_at", { ascending: false })
+        .limit(8);
+      if (!cancelled && Array.isArray(data)) setRows(data as unknown as ExportHistoryRow[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+      <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {t.credits_history}
+      </h2>
+      {rows.length === 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">{t.credits_history_empty}</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-border/60 text-sm">
+          {rows.map((r) => {
+            const credits = r.stats?.credits ?? 0;
+            const cloud = !!r.stats?.cloud;
+            const res = r.export_options?.resolution ?? "source";
+            const fmt = r.export_options?.container ?? "mp4";
+            return (
+              <li key={r.id} className="flex items-center justify-between gap-4 py-2.5">
+                <div className="min-w-0">
+                  <div className="truncate text-foreground">{r.label}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {new Date(r.created_at).toLocaleString()} · {fmt.toUpperCase()} ·{" "}
+                    {res === "source" ? "source" : `${res}p`} · {cloud ? "cloud" : "local"}
+                  </div>
+                </div>
+                <div className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                  {credits === 0 ? "0 cr" : `${credits} cr`}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }

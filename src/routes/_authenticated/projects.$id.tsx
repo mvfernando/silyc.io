@@ -150,7 +150,7 @@ function ProjectDetail() {
     },
     refetchInterval: realtimeOk ? false : 10_000,
   });
-  const audioJobs = audioJobsData ?? [];
+  const audioJobs: AudioJobRow[] = audioJobsData ?? [];
 
   // Detect external changes (status / new version) and toast + log activity
   const prevStatusRef = useRef<string | null>(null);

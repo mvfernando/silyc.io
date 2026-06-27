@@ -136,6 +136,22 @@ function ProjectDetail() {
     refetchInterval: realtimeOk ? false : 10_000,
   });
 
+  const { data: audioJobsData } = useQuery({
+    queryKey: ["audio-jobs", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audio_jobs" as never)
+        .select("*")
+        .eq("project_id", id)
+        .order("started_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return (data ?? []) as unknown as AudioJobRow[];
+    },
+    refetchInterval: realtimeOk ? false : 10_000,
+  });
+  const audioJobs = audioJobsData ?? [];
+
   // Detect external changes (status / new version) and toast + log activity
   const prevStatusRef = useRef<string | null>(null);
   const prevVersionIdsRef = useRef<Set<string>>(new Set());

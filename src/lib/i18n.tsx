@@ -417,6 +417,15 @@ const dict = {
     audio_jobs_status_running: "Running",
     audio_jobs_status_succeeded: "Succeeded",
     audio_jobs_status_failed: "Failed",
+    audio_jobs_status_canceled: "Canceled",
+    audio_cancel: "Cancel enhancement",
+    audio_canceling: "Canceling…",
+    audio_canceled_toast: "Audio enhancement canceled.",
+    activity_action_cancel: "Cancel audio enhancement",
+    audio_eta: "ETA",
+    audio_speed: "Speed",
+    export_activity_json: "Export activity (JSON)",
+    export_jobs_json: "Export history (JSON)",
   },
 } as const;
 

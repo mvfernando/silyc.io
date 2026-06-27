@@ -9,7 +9,7 @@ import { Spinner } from "@/components/spinner";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { formatDuration } from "@/lib/ffmpeg-processor";
-import { enhanceAudioWithAI } from "@/lib/replicate.functions";
+import { startEnhanceAudio, pollEnhanceAudio } from "@/lib/replicate.functions";
 import { explainCredits } from "@/lib/credits";
 import { mapError } from "@/lib/error-mapper";
 import { PreviewModal } from "@/components/preview-modal";
@@ -46,7 +46,8 @@ function ProjectDetail() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const enhanceFn = useServerFn(enhanceAudioWithAI);
+  const startEnhanceFn = useServerFn(startEnhanceAudio);
+  const pollEnhanceFn = useServerFn(pollEnhanceAudio);
   const [urls, setUrls] = useState<{ source?: string; output?: string }>({});
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   const [enhancing, setEnhancing] = useState(false);
@@ -57,6 +58,49 @@ function ProjectDetail() {
   const [restoreError, setRestoreError] = useState<{ id: string; msg: string } | null>(null);
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
+
+  type AudioJob = {
+    id: string;
+    predictionId?: string;
+    startedAt: number;
+    endedAt?: number;
+    status: "running" | "succeeded" | "failed";
+    attempt: number;
+    error?: string;
+    versionLabel?: string;
+  };
+  const audioJobsKey = `silentcut:audio-jobs:${id}`;
+  const [audioJobs, setAudioJobs] = useState<AudioJob[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(audioJobsKey);
+      return raw ? (JSON.parse(raw) as AudioJob[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const updateAudioJobs = useCallback(
+    (updater: (prev: AudioJob[]) => AudioJob[]) => {
+      setAudioJobs((prev) => {
+        const next = updater(prev).slice(0, 25);
+        try {
+          window.localStorage.setItem(audioJobsKey, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [audioJobsKey],
+  );
+
+  // Progress for AI audio: phase + estimated percent
+  const [enhanceProgress, setEnhanceProgress] = useState<{
+    phase: "queued" | "processing" | "finalizing";
+    percent: number;
+    attempt: number;
+    maxAttempts: number;
+  } | null>(null);
 
   type ActivityEvent = {
     id: string;
@@ -319,9 +363,84 @@ function ProjectDetail() {
     setEnhanceError(null);
     localActionsRef.current++;
     pushActivity({ action: t.activity_action_enhance, state: "started" });
+    const MAX_ATTEMPTS = 3;
+    const EXPECTED_MS = 60_000; // typical resemble-enhance runtime
+    let lastError: unknown = null;
     try {
-      const { url } = await enhanceFn({ data: { audioUrl: urls.output } });
+      let enhancedUrl: string | null = null;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const jobLocalId = crypto.randomUUID();
+        const jobStart = Date.now();
+        updateAudioJobs((prev) => [
+          {
+            id: jobLocalId,
+            startedAt: jobStart,
+            status: "running",
+            attempt,
+          },
+          ...prev,
+        ]);
+        setEnhanceProgress({ phase: "queued", percent: 2, attempt, maxAttempts: MAX_ATTEMPTS });
+        try {
+          const created = await startEnhanceFn({ data: { audioUrl: urls.output } });
+          updateAudioJobs((prev) =>
+            prev.map((j) => (j.id === jobLocalId ? { ...j, predictionId: created.id } : j)),
+          );
+          let current = created;
+          while (
+            current.status === "starting" ||
+            current.status === "processing"
+          ) {
+            const elapsed = Date.now() - jobStart;
+            const pct = Math.min(95, Math.round((elapsed / EXPECTED_MS) * 90) + 5);
+            setEnhanceProgress({
+              phase: current.status === "starting" ? "queued" : "processing",
+              percent: pct,
+              attempt,
+              maxAttempts: MAX_ATTEMPTS,
+            });
+            await new Promise((r) => setTimeout(r, 2500));
+            current = await pollEnhanceFn({ data: { id: current.id } });
+          }
+          if (current.status !== "succeeded" || !current.url) {
+            throw new Error(current.error ?? `Replicate ${current.status}`);
+          }
+          setEnhanceProgress({ phase: "finalizing", percent: 97, attempt, maxAttempts: MAX_ATTEMPTS });
+          enhancedUrl = current.url;
+          updateAudioJobs((prev) =>
+            prev.map((j) =>
+              j.id === jobLocalId
+                ? { ...j, status: "succeeded", endedAt: Date.now() }
+                : j,
+            ),
+          );
+          break;
+        } catch (err) {
+          lastError = err;
+          const msg = err instanceof Error ? err.message : String(err);
+          updateAudioJobs((prev) =>
+            prev.map((j) =>
+              j.id === jobLocalId
+                ? { ...j, status: "failed", endedAt: Date.now(), error: msg }
+                : j,
+            ),
+          );
+          pushActivity({
+            action: t.activity_action_enhance,
+            state: "failed",
+            detail: `${t.audio_attempt} ${attempt}/${MAX_ATTEMPTS}: ${msg}`,
+          });
+          if (attempt < MAX_ATTEMPTS) {
+            const backoff = 1500 * 2 ** (attempt - 1);
+            await new Promise((r) => setTimeout(r, backoff));
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (!enhancedUrl) throw lastError ?? new Error("enhance failed");
       // Download enhanced audio and upload to storage as a new version asset.
+      const url = enhancedUrl;
       const blob = await fetch(url).then((r) => r.blob());
       const path = `${project.user_id}/${project.id}/ai-audio-${Date.now()}.wav`;
       const { error: upErr } = await supabase.storage
@@ -339,6 +458,12 @@ function ProjectDetail() {
         stats: { ...activeStats, aiAudio: true },
         status: "done",
       } as never);
+      updateAudioJobs((prev) => {
+        const [head, ...rest] = prev;
+        if (!head) return prev;
+        return [{ ...head, versionLabel: label }, ...rest];
+      });
+      setEnhanceProgress({ phase: "finalizing", percent: 100, attempt: MAX_ATTEMPTS, maxAttempts: MAX_ATTEMPTS });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["project-versions", id] }),
         qc.invalidateQueries({ queryKey: ["project", id] }),
@@ -364,6 +489,7 @@ function ProjectDetail() {
       });
     } finally {
       setEnhancing(false);
+      setTimeout(() => setEnhanceProgress(null), 1200);
       localActionsRef.current = Math.max(0, localActionsRef.current - 1);
     }
   };
@@ -501,6 +627,7 @@ function ProjectDetail() {
                 busy={enhancing}
                 error={enhanceError}
                 onRun={handleEnhanceAudio}
+                progress={enhanceProgress}
               />
             )}
 
@@ -521,6 +648,8 @@ function ProjectDetail() {
             />
 
             <ActivityPanel t={t} events={activity} />
+
+            <AudioJobsHistory t={t} jobs={audioJobs} />
           </>
         )}
       </main>

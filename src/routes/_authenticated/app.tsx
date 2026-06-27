@@ -72,6 +72,7 @@ const CLOUD_ENV: "sandbox" | "production" =
 function AppPage() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const search = useSearch({ from: "/_authenticated/app" });
   const inputRef = useRef<HTMLInputElement>(null);
 

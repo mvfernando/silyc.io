@@ -343,6 +343,15 @@ const dict = {
     validation_check_duration: "Duration",
     validation_check_size: "Size",
     validation_check_decode: "Decoding",
+    try_again: "Try again",
+    failed: "Failed",
+    view_project: "Open project",
+    view_versions: "View versions",
+    view_logs: "View logs",
+    deleted: "Project deleted",
+    sr_busy: "Operation in progress, please wait.",
+    err_delete: "Could not delete. Check your connection and try again.",
+    err_restore: "Could not set this version as current.",
   },
 } as const;
 

@@ -53,6 +53,9 @@ function ProjectDetail() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<{ id: string; msg: string } | null>(null);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
   const openPreview = () => {
@@ -111,32 +114,56 @@ function ProjectDetail() {
   const handleDelete = async () => {
     if (!project) return;
     setDeleting(true);
+    setDeleteError(null);
     const versionPaths = (versions ?? []).map((v) => v.output_path).filter(Boolean) as string[];
     const paths = [project.source_path, project.output_path, ...versionPaths].filter(Boolean) as string[];
-    if (paths.length) await supabase.storage.from("videos").remove(paths);
-    const { error } = await supabase.from("projects").delete().eq("id", project.id);
-    if (error) {
+    try {
+      if (paths.length) await supabase.storage.from("videos").remove(paths);
+      const { error } = await supabase.from("projects").delete().eq("id", project.id);
+      if (error) throw error;
+      toast.success(t.deleted, {
+        action: { label: t.nav_projects, onClick: () => navigate({ to: "/projects" }) },
+      });
+      navigate({ to: "/projects" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t.err_delete;
+      setDeleteError(msg);
+      toast.error(t.err_delete, {
+        description: msg,
+        action: { label: t.try_again, onClick: () => handleDelete() },
+      });
       setDeleting(false);
-      return toast.error(error.message);
     }
-    navigate({ to: "/projects" });
   };
 
   const setAsCurrent = async (v: Version) => {
     if (!project || !v.output_path) return;
     setRestoringId(v.id);
-    const { error } = await supabase
-      .from("projects")
-      .update({ output_path: v.output_path, stats: v.stats as never })
-      .eq("id", project.id);
-    if (error) {
+    setRestoreError(null);
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ output_path: v.output_path, stats: v.stats as never })
+        .eq("id", project.id);
+      if (error) throw error;
+      setActiveVersionId(null);
+      await qc.invalidateQueries({ queryKey: ["project", id] });
+      toast.success(t.versions_restore, {
+        action: {
+          label: t.preview_open,
+          onClick: () => openPreview(),
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t.err_restore;
+      setRestoreError({ id: v.id, msg });
+      toast.error(t.err_restore, {
+        description: msg,
+        action: { label: t.try_again, onClick: () => setAsCurrent(v) },
+      });
+    } finally {
       setRestoringId(null);
-      return toast.error(error.message);
     }
-    setActiveVersionId(null);
-    await qc.invalidateQueries({ queryKey: ["project", id] });
-    setRestoringId(null);
-    toast.success(t.versions_restore);
   };
 
   const reprocess = (v: Version) => {
@@ -152,6 +179,7 @@ function ProjectDetail() {
   const handleEnhanceAudio = async () => {
     if (!urls.output || !project) return;
     setEnhancing(true);
+    setEnhanceError(null);
     try {
       const { url } = await enhanceFn({ data: { audioUrl: urls.output } });
       // Download enhanced audio and upload to storage as a new version asset.
@@ -173,10 +201,23 @@ function ProjectDetail() {
         status: "done",
       } as never);
       await qc.invalidateQueries({ queryKey: ["project-versions", id] });
-      toast.success(t.ai_enhance_done);
+      toast.success(t.ai_enhance_done, {
+        action: {
+          label: t.view_versions,
+          onClick: () => {
+            document
+              .getElementById("version-history")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          },
+        },
+      });
     } catch (err) {
       const mapped = mapError(err, lang);
-      toast.error(mapped.title, { description: mapped.action });
+      setEnhanceError(mapped.title);
+      toast.error(mapped.title, {
+        description: mapped.action,
+        action: { label: t.try_again, onClick: () => handleEnhanceAudio() },
+      });
     } finally {
       setEnhancing(false);
     }
@@ -260,10 +301,30 @@ function ProjectDetail() {
                     <a href={urls.output} download={`${project.name}.mp4`}>{t.proj_download}</a>
                   </Button>
                 )}
-                <Button variant="ghost" onClick={handleDelete} disabled={deleting}>
-                  {deleting && <Spinner className="mr-2" />}
-                  {t.proj_delete}
-                </Button>
+                <div className="flex flex-col items-end gap-1">
+                  <Button
+                    variant="ghost"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    aria-busy={deleting}
+                  >
+                    {deleting && <Spinner className="mr-2" />}
+                    {t.proj_delete}
+                    {deleting && <span className="sr-only"> — {t.sr_busy}</span>}
+                  </Button>
+                  {deleteError && !deleting && (
+                    <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
+                      <span>{t.failed}</span>
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        className="underline underline-offset-2"
+                      >
+                        {t.try_again}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -290,6 +351,7 @@ function ProjectDetail() {
               <AIEnhanceCard
                 t={t}
                 busy={enhancing}
+                error={enhanceError}
                 onRun={handleEnhanceAudio}
               />
             )}
@@ -307,6 +369,7 @@ function ProjectDetail() {
               onSetCurrent={setAsCurrent}
               onReprocess={reprocess}
               restoringId={restoringId}
+              restoreError={restoreError}
             />
           </>
         )}
@@ -379,10 +442,12 @@ function PublicStatusPanel({
 function AIEnhanceCard({
   t,
   busy,
+  error,
   onRun,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   busy: boolean;
+  error: string | null;
   onRun: () => void;
 }) {
   return (
@@ -392,10 +457,21 @@ function AIEnhanceCard({
           <div className="text-sm font-medium">{t.ai_enhance_title}</div>
           <p className="mt-1 text-xs text-muted-foreground">{t.ai_enhance_desc}</p>
         </div>
-        <Button onClick={onRun} disabled={busy} size="sm">
-          {busy && <Spinner className="mr-2" />}
-          {busy ? t.ai_enhance_running : t.ai_enhance_run}
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button onClick={onRun} disabled={busy} aria-busy={busy} size="sm">
+            {busy && <Spinner className="mr-2" />}
+            {busy ? t.ai_enhance_running : t.ai_enhance_run}
+            {busy && <span className="sr-only"> — {t.sr_busy}</span>}
+          </Button>
+          {error && !busy && (
+            <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
+              <span>{t.failed}: {error}</span>
+              <button type="button" onClick={onRun} className="underline underline-offset-2">
+                {t.try_again}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -495,7 +571,7 @@ const VideoPanel = ({
 );
 
 function VersionHistory({
-  t, versions, currentOutputPath, activeId, onPreview, onSetCurrent, onReprocess, restoringId,
+  t, versions, currentOutputPath, activeId, onPreview, onSetCurrent, onReprocess, restoringId, restoreError,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   versions: Version[];
@@ -505,9 +581,10 @@ function VersionHistory({
   onSetCurrent: (v: Version) => void;
   onReprocess: (v: Version) => void;
   restoringId?: string | null;
+  restoreError?: { id: string; msg: string } | null;
 }) {
   return (
-    <section className="mt-12">
+    <section id="version-history" className="mt-12">
       <h2 className="text-lg font-semibold tracking-tight">{t.versions_title}</h2>
       {versions.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">{t.versions_empty}</p>
@@ -543,15 +620,33 @@ function VersionHistory({
                     {isActive ? "Preview off" : "Preview"}
                   </Button>
                   {!isCurrent && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onSetCurrent(v)}
-                      disabled={restoringId === v.id}
-                    >
-                      {restoringId === v.id && <Spinner className="mr-2" />}
-                      {t.versions_restore}
-                    </Button>
+                    <div className="flex flex-col items-end gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onSetCurrent(v)}
+                        disabled={restoringId === v.id}
+                        aria-busy={restoringId === v.id}
+                      >
+                        {restoringId === v.id && <Spinner className="mr-2" />}
+                        {t.versions_restore}
+                        {restoringId === v.id && (
+                          <span className="sr-only"> — {t.sr_busy}</span>
+                        )}
+                      </Button>
+                      {restoreError?.id === v.id && restoringId !== v.id && (
+                        <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
+                          <span>{t.failed}</span>
+                          <button
+                            type="button"
+                            onClick={() => onSetCurrent(v)}
+                            className="underline underline-offset-2"
+                          >
+                            {t.try_again}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                   <Button size="sm" onClick={() => onReprocess(v)}>
                     {t.versions_reprocess}

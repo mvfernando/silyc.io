@@ -600,8 +600,14 @@ function AppPage() {
       } as never);
 
       clearResume(projectId!);
-      toast.success(`−${formatDuration(stats.removedSeconds)} ${t.proj_saved}`);
-      navigate({ to: "/projects/$id", params: { id: projectId! } });
+      const finishedId = projectId!;
+      toast.success(`−${formatDuration(stats.removedSeconds)} ${t.proj_saved}`, {
+        action: {
+          label: t.view_project,
+          onClick: () => navigate({ to: "/projects/$id", params: { id: finishedId } }),
+        },
+      });
+      navigate({ to: "/projects/$id", params: { id: finishedId } });
     } catch (err: unknown) {
       const cancelled = err instanceof CancelledError || controller.isCancelled();
       const lastPhase = phase as string;
@@ -814,10 +820,32 @@ function AppPage() {
           </div>
         )}
 
-        <div className="mt-10 flex justify-end">
-          <Button onClick={handleProcess} disabled={busy || !file || validating} size="lg">
+        <div className="mt-10 flex flex-col items-end gap-2">
+          {lastError && !busy && !validating && (
+            <div
+              role="alert"
+              className="flex items-center gap-3 text-xs text-destructive"
+            >
+              <span>{t.failed}: {lastError.title}</span>
+              <button
+                type="button"
+                onClick={handleProcess}
+                className="underline underline-offset-2 hover:text-destructive/80"
+              >
+                {t.try_again}
+              </button>
+            </div>
+          )}
+          <Button
+            onClick={handleProcess}
+            disabled={busy || !file || validating}
+            aria-busy={busy || validating}
+            aria-live="polite"
+            size="lg"
+          >
             {(validating || busy) && <Spinner className="mr-2" />}
             {validating ? t.validating : busy ? t.processing : t.process}
+            {(validating || busy) && <span className="sr-only"> — {t.sr_busy}</span>}
           </Button>
         </div>
       </main>

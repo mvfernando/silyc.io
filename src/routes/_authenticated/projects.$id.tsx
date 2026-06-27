@@ -11,6 +11,7 @@ import { formatDuration } from "@/lib/ffmpeg-processor";
 import { enhanceAudioWithAI } from "@/lib/replicate.functions";
 import { explainCredits } from "@/lib/credits";
 import { mapError } from "@/lib/error-mapper";
+import { PreviewModal } from "@/components/preview-modal";
 
 export const Route = createFileRoute("/_authenticated/projects/$id")({
   head: () => ({ meta: [{ title: "SilentCut — Projeto" }] }),
@@ -48,6 +49,15 @@ function ProjectDetail() {
   const [urls, setUrls] = useState<{ source?: string; output?: string }>({});
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   const [enhancing, setEnhancing] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const compareRef = useRef<HTMLDivElement>(null);
+
+  const openPreview = () => {
+    setPreviewOpen(true);
+    requestAnimationFrame(() => {
+      compareRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -229,6 +239,11 @@ function ProjectDetail() {
               </div>
               <div className="flex gap-2">
                 {urls.output && (
+                  <Button variant="outline" onClick={openPreview}>
+                    {t.preview_open}
+                  </Button>
+                )}
+                {urls.output && (
                   <Button asChild>
                     <a href={urls.output} download={`${project.name}.mp4`}>{t.proj_download}</a>
                   </Button>
@@ -264,7 +279,9 @@ function ProjectDetail() {
               />
             )}
 
-            <SideBySide t={t} source={urls.source} output={urls.output} />
+            <div ref={compareRef}>
+              <SideBySide t={t} source={urls.source} output={urls.output} />
+            </div>
 
             <VersionHistory
               t={t}
@@ -278,6 +295,14 @@ function ProjectDetail() {
           </>
         )}
       </main>
+      <PreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        sourceUrl={urls.source}
+        outputUrl={urls.output}
+        downloadUrl={urls.output}
+        downloadName={project ? `${project.name}.mp4` : undefined}
+      />
     </div>
   );
 }

@@ -1141,6 +1141,7 @@ type ExportHistoryRow = {
 };
 
 function ExportsHistoryPanel({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<ExportHistoryRow[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -1183,11 +1184,55 @@ function ExportsHistoryPanel({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
                 <div className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
                   {credits === 0 ? "0 cr" : `${credits} cr`}
                 </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate({ to: "/app", search: { reprocess: r.id } })}
+                >
+                  {t.versions_reprocess}
+                </Button>
               </li>
             );
           })}
         </ul>
       )}
     </section>
+  );
+}
+
+function ErrorBanner({
+  t,
+  error,
+  onDismiss,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  error: MappedError;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="mt-6 rounded-xl border border-destructive/40 bg-destructive/10 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-destructive">
+            {error.title}
+          </div>
+          <p className="mt-2 text-sm text-foreground">
+            <span className="font-medium">{t.err_cause}: </span>
+            {error.cause}
+          </p>
+          <p className="mt-1 text-sm text-foreground">
+            <span className="font-medium">{t.err_action}: </span>
+            {error.action}
+          </p>
+          <details className="mt-3 text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none">{t.err_details}</summary>
+            <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[11px]">{error.raw}</pre>
+          </details>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onDismiss}>
+          {t.err_dismiss}
+        </Button>
+      </div>
+    </div>
   );
 }

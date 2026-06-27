@@ -9,7 +9,7 @@ import { Spinner } from "@/components/spinner";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { formatDuration } from "@/lib/ffmpeg-processor";
-import { startEnhanceAudio, pollEnhanceAudio } from "@/lib/replicate.functions";
+import { startEnhanceAudio, pollEnhanceAudio, cancelEnhanceAudio } from "@/lib/replicate.functions";
 import { explainCredits } from "@/lib/credits";
 import { mapError } from "@/lib/error-mapper";
 import { PreviewModal } from "@/components/preview-modal";
@@ -48,9 +48,12 @@ function ProjectDetail() {
   const qc = useQueryClient();
   const startEnhanceFn = useServerFn(startEnhanceAudio);
   const pollEnhanceFn = useServerFn(pollEnhanceAudio);
+  const cancelEnhanceFn = useServerFn(cancelEnhanceAudio);
   const [urls, setUrls] = useState<{ source?: string; output?: string }>({});
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   const [enhancing, setEnhancing] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+  const cancelRequestedRef = useRef(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -59,40 +62,20 @@ function ProjectDetail() {
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const compareRef = useRef<HTMLDivElement>(null);
 
-  type AudioJob = {
-    id: string;
-    predictionId?: string;
-    startedAt: number;
-    endedAt?: number;
-    status: "running" | "succeeded" | "failed";
-    attempt: number;
-    error?: string;
-    versionLabel?: string;
-  };
-  const audioJobsKey = `silentcut:audio-jobs:${id}`;
-  const [audioJobs, setAudioJobs] = useState<AudioJob[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.localStorage.getItem(audioJobsKey);
-      return raw ? (JSON.parse(raw) as AudioJob[]) : [];
-    } catch {
-      return [];
-    }
-  });
-  const updateAudioJobs = useCallback(
-    (updater: (prev: AudioJob[]) => AudioJob[]) => {
-      setAudioJobs((prev) => {
-        const next = updater(prev).slice(0, 25);
-        try {
-          window.localStorage.setItem(audioJobsKey, JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
+  const { data: audioJobs } = useQuery({
+    queryKey: ["audio-jobs", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audio_jobs" as never)
+        .select("*")
+        .eq("project_id", id)
+        .order("started_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return (data ?? []) as unknown as AudioJob[];
     },
-    [audioJobsKey],
-  );
+    refetchInterval: realtimeOk ? false : 10_000,
+  });
 
   // Progress for AI audio: phase + estimated percent
   const [enhanceProgress, setEnhanceProgress] = useState<{
@@ -100,6 +83,7 @@ function ProjectDetail() {
     percent: number;
     attempt: number;
     maxAttempts: number;
+    startedAt: number;
   } | null>(null);
 
   type ActivityEvent = {

@@ -31,6 +31,9 @@ export type RunnerCtx = {
   isCancelled: () => boolean;
   isPaused: () => boolean;
   emit: (e: AgentEvent) => void;
+  /** Hook fired after a task finishes; may mutate plan.params to react
+   *  to fresh evidence (e.g. tune cut params from the transcription). */
+  onAfterTask?: (taskId: TaskId, results: TaskResults, plan: TaskPlan) => void | Promise<void>;
 };
 
 function waitWhilePausedFn(ctx: RunnerCtx) {
@@ -92,6 +95,9 @@ export async function runPlan(
         });
       }
       ctx.emit({ type: "task_done", task: taskId });
+      if (ctx.onAfterTask) {
+        await ctx.onAfterTask(taskId, results, plan);
+      }
     } catch (err) {
       if (err instanceof Error && err.message === "cancelled") throw err;
       ctx.emit({

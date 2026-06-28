@@ -1438,12 +1438,14 @@ function StepIndicator({
   t,
   phaseProgress = 0,
   paused = false,
+  eta = null,
 }: {
   active: StepKey | null;
   completed?: ResumeStepKey[];
   t: ReturnType<typeof useI18n>["t"];
   phaseProgress?: number;
   paused?: boolean;
+  eta?: number | null;
 }) {
   const steps: { key: StepKey; label: string }[] = [
     { key: "silences", label: t.step_silences },
@@ -1454,11 +1456,12 @@ function StepIndicator({
   const idx = active ? steps.findIndex((s) => s.key === active) : -1;
   const completedSet = new Set<string>(completed ?? []);
   return (
-    <ol className="flex items-stretch gap-3 text-xs">
+    <ol className="flex items-stretch gap-3 text-xs" aria-label="Processing steps">
       {steps.map((s, i) => {
         const done = i < idx || completedSet.has(s.key);
         const current = i === idx;
         const fillPct = current ? Math.max(0, Math.min(100, phaseProgress)) : done ? 100 : 0;
+        const showEta = current && !paused && eta != null && phaseProgress > 1 && phaseProgress < 100;
         return (
           <li key={s.key} className="flex flex-1 flex-col gap-2">
             <div className="flex items-center gap-2">
@@ -1474,21 +1477,42 @@ function StepIndicator({
               </span>
               <span
                 className={[
-                  "truncate",
+                  "truncate flex-1",
                   current ? "text-foreground" : done ? "text-foreground/80" : "text-muted-foreground",
                 ].join(" ")}
               >
                 {s.label}
               </span>
+              {(current || done) && (
+                <span
+                  className={[
+                    "shrink-0 font-mono text-[10px] tabular-nums",
+                    current ? "text-foreground" : "text-muted-foreground",
+                  ].join(" ")}
+                  aria-live={current ? "polite" : undefined}
+                >
+                  {Math.round(fillPct)}%
+                </span>
+              )}
             </div>
-            <div className="relative h-1 overflow-hidden rounded-full bg-border/60">
+            <div
+              className="relative h-1.5 overflow-hidden rounded-full bg-border/60"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(fillPct)}
+              aria-label={s.label}
+            >
               <div
                 className={[
-                  "h-full rounded-full bg-primary transition-[width] duration-300 ease-out",
-                  current && !paused && "animate-pulse",
+                  "h-full rounded-full bg-primary transition-[width] duration-500 ease-linear",
+                  current && !paused && fillPct < 100 && "after:absolute after:inset-y-0 after:right-0 after:w-8 after:bg-gradient-to-r after:from-transparent after:to-primary/60 after:animate-pulse",
                 ].filter(Boolean).join(" ")}
                 style={{ width: `${fillPct}%` }}
               />
+            </div>
+            <div className="h-3 text-[10px] text-muted-foreground tabular-nums">
+              {showEta ? <span>~{formatEta(eta!)}</span> : current && paused ? <span>{t.paused}</span> : null}
             </div>
           </li>
         );

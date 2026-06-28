@@ -307,82 +307,111 @@ function AppPage() {
       throw new Error("No audible content detected. Try lowering the silence threshold.");
     }
 
-    const submitArgs = {
-      sourceUrl: signed.signedUrl,
-      keeps,
-      resolution: exportOpts.resolution,
-      format: exportOpts.container,
-      fps: exportOpts.fps,
-    };
-    const { id } = await withBackoff(
-      (n) => {
-        appendLog({ level: "info", step: "export", message: `cloud submit · ${t.retry_attempt} ${n}` });
-        return submitCloud({ data: submitArgs });
-      },
-      {
-        attempts: 3,
-        isRetriable: isTransientCloudError,
-        signal: () => !!controllerRef.current?.isCancelled(),
-        onAttempt: ({ attempt, delayMs, error }) => {
-          if (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            appendLog({
-              level: "warn",
-              step: "export",
-              message: `cloud submit failed (#${attempt}): ${msg}${delayMs ? ` · ${t.retry_waiting} ${Math.round(delayMs / 1000)}s` : ""}`,
-            });
-          }
+    const submitAndPoll = async (
+      resolution: ExportOptions["resolution"],
+      videoBitrate: string | undefined,
+      tag: string,
+    ) => {
+      const submitArgs = {
+        sourceUrl: signed.signedUrl,
+        keeps,
+        resolution,
+        format: exportOpts.container,
+        fps: exportOpts.fps,
+      };
+      const { id } = await withBackoff(
+        (n) => {
+          appendLog({ level: "info", step: "export", message: `cloud submit (${tag}) · ${t.retry_attempt} ${n}` });
+          return submitCloud({ data: submitArgs });
         },
-      },
-    );
-    appendLog({ level: "info", step: "export", message: `cloud render submitted (id ${id})` });
+        {
+          attempts: 3,
+          isRetriable: isTransientCloudError,
+          signal: () => !!controllerRef.current?.isCancelled(),
+          onAttempt: ({ attempt, delayMs, error }) => {
+            if (error) {
+              const msg = error instanceof Error ? error.message : String(error);
+              appendLog({
+                level: "warn",
+                step: "export",
+                message: `cloud submit failed (#${attempt}): ${msg}${delayMs ? ` · ${t.retry_waiting} ${Math.round(delayMs / 1000)}s` : ""}`,
+              });
+            }
+          },
+        },
+      );
+      cloudJobIdRef.current = id;
+      appendLog({
+        level: "info",
+        step: "export",
+        message: `cloud render submitted (id ${id}) · ${resolution}${videoBitrate ? ` @ ${videoBitrate}` : ""}`,
+      });
 
-    // Poll
-    let url: string | undefined;
-    let duration = 0;
-    const startedAt = Date.now();
-    let pollFailures = 0;
-    for (let i = 0; i < 400; i++) {
-      if (controllerRef.current?.isCancelled()) throw new CancelledError();
-      if (Date.now() - startedAt > CLOUD_TIMEOUT_MS) {
-        throw new Error(t.cloud_timeout);
+      let url: string | undefined;
+      let duration = 0;
+      const startedAt = Date.now();
+      let pollFailures = 0;
+      for (let i = 0; i < 400; i++) {
+        if (controllerRef.current?.isCancelled()) throw new CancelledError();
+        if (Date.now() - startedAt > CLOUD_TIMEOUT_MS) {
+          throw new Error(`${t.cloud_timeout} (job ${id})`);
+        }
+        await new Promise((r) => setTimeout(r, 3000));
+        let r: Awaited<ReturnType<typeof pollCloud>>;
+        try {
+          r = await pollCloud({ data: { id } });
+          pollFailures = 0;
+        } catch (pollErr) {
+          pollFailures += 1;
+          const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+          appendLog({
+            level: "warn",
+            step: "export",
+            message: `cloud poll failed (#${pollFailures}): ${msg}`,
+          });
+          if (pollFailures >= 4 || !isTransientCloudError(pollErr)) throw pollErr;
+          await new Promise((res) => setTimeout(res, Math.min(15_000, 1500 * 2 ** (pollFailures - 1))));
+          continue;
+        }
+        setProgress(Math.min(95, 20 + i * 4));
+        if (r.status === "done" && r.url) {
+          url = r.url;
+          duration = r.duration ?? 0;
+          break;
+        }
+        if (r.status === "failed") throw new Error(`${r.error ?? t.cloud_status_failed} (job ${id})`);
       }
-      await new Promise((r) => setTimeout(r, 3000));
-      let r: Awaited<ReturnType<typeof pollCloud>>;
-      try {
-        r = await pollCloud({ data: { id } });
-        pollFailures = 0;
-      } catch (pollErr) {
-        pollFailures += 1;
-        const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
-        appendLog({
-          level: "warn",
-          step: "export",
-          message: `cloud poll failed (#${pollFailures}): ${msg}`,
-        });
-        if (pollFailures >= 4 || !isTransientCloudError(pollErr)) throw pollErr;
-        // exponential backoff between consecutive failed polls
-        await new Promise((res) => setTimeout(res, Math.min(15_000, 1500 * 2 ** (pollFailures - 1))));
-        continue;
-      }
-      setProgress(Math.min(95, 20 + i * 4));
-      if (r.status === "done" && r.url) {
-        url = r.url;
-        duration = r.duration ?? 0;
-        break;
-      }
-      if (r.status === "failed") throw new Error(r.error ?? t.cloud_status_failed);
+      if (!url) throw new Error(`${t.cloud_status_failed} (job ${id})`);
+      return { url, duration };
+    };
+
+    let attemptResult: { url: string; duration: number };
+    try {
+      attemptResult = await submitAndPoll(exportOpts.resolution, exportOpts.videoBitrate, "primary");
+    } catch (firstErr) {
+      if (firstErr instanceof CancelledError || controllerRef.current?.isCancelled()) throw firstErr;
+      const downgraded = downgradeResolution(exportOpts.resolution);
+      const lowerBitrate = halveBitrate(exportOpts.videoBitrate);
+      const canDowngrade = downgraded !== exportOpts.resolution || lowerBitrate !== exportOpts.videoBitrate;
+      if (!canDowngrade) throw firstErr;
+      const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+      appendLog({
+        level: "warn",
+        step: "export",
+        message: `${t.cloud_downgrade_msg} (${exportOpts.resolution} → ${downgraded}${lowerBitrate ? `, ${lowerBitrate}` : ""}) · ${msg}`,
+      });
+      toast.message(t.cloud_downgrade_title, { description: t.cloud_downgrade_msg });
+      attemptResult = await submitAndPoll(downgraded, lowerBitrate, "downgrade");
     }
-    if (!url) throw new Error(t.cloud_status_failed);
 
-    const blobRes = await fetch(url);
+    const blobRes = await fetch(attemptResult.url);
     const blob = await blobRes.blob();
     setProgress(100);
     return {
       blob,
       mime: blob.type || "video/mp4",
       ext: exportOpts.container,
-      duration: duration || totalDuration,
+      duration: attemptResult.duration || totalDuration,
     };
   };
 

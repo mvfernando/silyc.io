@@ -1043,6 +1043,27 @@ function AppPage() {
           </div>
         )}
 
+        {detection && detection.silences.length > 0 && (
+          <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                {t.step_silences} · {t.step_timeline}
+              </h2>
+            </div>
+            <SilenceTimeline
+              silences={detection.silences}
+              totalDuration={detection.duration}
+              removedSeconds={detection.silences.reduce((a, s) => a + Math.max(0, s.end - s.start), 0)}
+              labels={{
+                kept: t.timeline_kept,
+                removed: t.timeline_removed,
+                total: t.timeline_total,
+                cuts: t.timeline_cuts,
+              }}
+            />
+          </section>
+        )}
+
         {result && !busy && (
           <ResultPanel
             t={t}

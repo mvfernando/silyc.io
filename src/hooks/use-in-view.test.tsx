@@ -1,5 +1,13 @@
 /// <reference types="vitest/globals" />
-import { renderHook, act } from "@testing-library/react";
+import { render, renderHook, act } from "@testing-library/react";
+import { useEffect } from "react";
+function Probe({ onState }: { onState: (s: { inView: boolean }) => void }) {
+  const { ref, inView } = useInView<HTMLDivElement>();
+  useEffect(() => {
+    onState({ inView });
+  }, [inView, onState]);
+  return <div ref={ref} data-testid="probe" />;
+}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useInView, usePrefersReducedMotion } from "./use-in-view";
 
@@ -48,42 +56,29 @@ function fire(intersecting: boolean) {
 
 describe("useInView — drives the animation-play gate", () => {
   it("starts hidden, observes the element, and stops observing on unmount", () => {
-    const { result, unmount } = renderHook(() => useInView<HTMLDivElement>());
-    // Attach the ref to a real DOM node so the effect can observe it.
-    act(() => {
-      (result.current.ref as { current: HTMLDivElement | null }).current =
-        document.createElement("div");
-    });
-    // Re-render to run the effect with the attached node.
-    const { result: r2, unmount: u2 } = renderHook(() => {
-      const v = useInView<HTMLDivElement>();
-      (v.ref as { current: HTMLDivElement | null }).current = document.createElement("div");
-      return v;
-    });
-    expect(r2.current.inView).toBe(false);
-    u2();
+    const states: Array<{ inView: boolean }> = [];
+    const { unmount } = render(<Probe onState={(s) => states.push(s)} />);
+    expect(observe).toHaveBeenCalledTimes(1);
+    expect(states.at(-1)?.inView).toBe(false);
     unmount();
     expect(disconnect).toHaveBeenCalled();
   });
 
   it("turns the play-gate on when the section enters and off when it leaves", () => {
-    const { result } = renderHook(() => useInView<HTMLDivElement>());
-    act(() => {
-      (result.current.ref as { current: HTMLDivElement | null }).current =
-        document.createElement("div");
-    });
+    const states: Array<{ inView: boolean }> = [];
+    render(<Probe onState={(s) => states.push(s)} />);
 
     // Section enters → animations should start.
     fire(true);
-    expect(result.current.inView).toBe(true);
+    expect(states.at(-1)?.inView).toBe(true);
 
     // Section leaves → animations should stop.
     fire(false);
-    expect(result.current.inView).toBe(false);
+    expect(states.at(-1)?.inView).toBe(false);
 
     // Re-entering must resume.
     fire(true);
-    expect(result.current.inView).toBe(true);
+    expect(states.at(-1)?.inView).toBe(true);
   });
 
   it("falls back to inView=true when IntersectionObserver is unavailable", () => {

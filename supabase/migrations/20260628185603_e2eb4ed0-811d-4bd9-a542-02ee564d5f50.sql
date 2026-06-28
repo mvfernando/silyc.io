@@ -1,0 +1,1 @@
+ALTER TABLE public.pipeline_feedback ADD COLUMN IF NOT EXISTS comment text CHECK (comment IS NULL OR char_length(comment) <= 1000);

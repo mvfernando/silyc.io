@@ -69,6 +69,7 @@ export type Database = {
       }
       pipeline_feedback: {
         Row: {
+          comment: string | null
           created_at: string
           id: string
           rating: number | null
@@ -79,6 +80,7 @@ export type Database = {
           version_id: string | null
         }
         Insert: {
+          comment?: string | null
           created_at?: string
           id?: string
           rating?: number | null
@@ -89,6 +91,7 @@ export type Database = {
           version_id?: string | null
         }
         Update: {
+          comment?: string | null
           created_at?: string
           id?: string
           rating?: number | null

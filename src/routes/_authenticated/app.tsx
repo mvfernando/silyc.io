@@ -1374,10 +1374,10 @@ function OptionRow({
 }
 
 function SliderField({
-  label, value, unit, min, max, step, decimals = 0, onChange,
+  label, value, unit, min, max, step, decimals = 0, onChange, hint,
 }: {
   label: string; value: number; unit: string; min: number; max: number; step: number;
-  decimals?: number; onChange: (v: number) => void;
+  decimals?: number; onChange: (v: number) => void; hint?: string;
 }) {
   return (
     <div>
@@ -1388,6 +1388,7 @@ function SliderField({
         </span>
       </div>
       <Slider value={[value]} onValueChange={(v) => onChange(v[0])} min={min} max={max} step={step} className="mt-3" />
+      {hint && <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{hint}</p>}
     </div>
   );
 }

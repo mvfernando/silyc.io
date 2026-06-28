@@ -1,10 +1,11 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
+import coreURL from "@ffmpeg/core?url";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
 let ffmpegInstance: FFmpeg | null = null;
 let loadPromise: Promise<FFmpeg> | null = null;
 
-const CORE_JS_URL = "/ffmpeg/ffmpeg-core.js";
+const CORE_JS_URL = coreURL;
 const CORE_WASM_URL = "/__l5e/assets-v1/43a1810f-a3cc-41c7-b68a-43fa8459fcc2/ffmpeg-core.wasm";
 
 async function loadFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {

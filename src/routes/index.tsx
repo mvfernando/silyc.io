@@ -19,16 +19,16 @@ export const Route = createFileRoute("/")({
 function Index() {
   const { t } = useI18n();
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30">
       <SiteHeader />
       <main>
         <Hero t={t} />
-        <Features t={t} />
+        <FeaturesBento t={t} />
         <Impact t={t} />
         <CtaStrip t={t} />
       </main>
-      <footer className="border-t border-border/60 py-8 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} {t.footer}
+      <footer className="border-t border-border/60 py-10 text-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        © {new Date().getFullYear()} · {t.footer}
       </footer>
     </div>
   );
@@ -36,188 +36,313 @@ function Index() {
 
 function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
   return (
-    <section className="relative overflow-hidden border-b border-border/60">
+    <section className="relative overflow-hidden">
+      {/* Ember glow */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-60"
-        style={{
-          background:
-            "radial-gradient(60% 50% at 70% 20%, color-mix(in oklab, var(--color-primary) 18%, transparent) 0%, transparent 60%), radial-gradient(40% 40% at 20% 80%, color-mix(in oklab, var(--color-primary) 10%, transparent) 0%, transparent 60%)",
-        }}
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[840px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-60 blur-[140px]"
+        style={{ background: "color-mix(in oklab, var(--color-primary) 22%, transparent)" }}
       />
-      <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-20 md:grid-cols-[1.1fr_0.9fr] md:py-28">
-        <div>
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="inline-block rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
-          >
+      <div className="relative mx-auto flex min-h-[88vh] max-w-6xl flex-col items-center justify-center px-6 py-28 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="mb-10 inline-flex items-center gap-2 rounded-full border border-border/80 bg-white/[0.03] px-3 py-1 backdrop-blur"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-70" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+          </span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
             {t.hero_eyebrow}
-          </motion.div>
-          <motion.h1
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.05 }}
-            className="mt-5 text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl"
+          </span>
+        </motion.div>
+
+        <motion.h1
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.05 }}
+          className="font-display text-[14vw] font-extrabold leading-[0.85] tracking-[-0.04em] md:text-[9rem]"
+        >
+          Silyc<span className="text-primary">.</span>
+        </motion.h1>
+
+        <motion.p
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.15 }}
+          className="mt-8 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground md:text-xl"
+        >
+          {t.hero_sub}
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.25 }}
+          className="mt-12 flex flex-col items-center gap-3 sm:flex-row"
+        >
+          <Button
+            asChild
+            size="lg"
+            className="rounded-sm px-8 shadow-[0_0_60px_-15px_color-mix(in_oklab,var(--color-primary)_70%,transparent)]"
           >
-            {t.hero_title}
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="mt-5 max-w-xl text-lg text-muted-foreground"
-          >
-            {t.hero_sub}
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.15 }}
-            className="mt-8 flex flex-wrap items-center gap-3"
-          >
-            <Button asChild size="lg">
-              <Link to="/app">{t.hero_cta}</Link>
-            </Button>
-            <Button asChild size="lg" variant="ghost">
-              <a href="#features">{t.hero_secondary}</a>
-            </Button>
-          </motion.div>
-        </div>
-        <HeroVisual />
+            <Link to="/app">{t.hero_cta}</Link>
+          </Button>
+          <Button asChild size="lg" variant="outline" className="rounded-sm border-border/80 bg-white/[0.03] px-8">
+            <a href="#features">{t.hero_secondary}</a>
+          </Button>
+        </motion.div>
+
+        <h2 className="sr-only">{t.hero_title}</h2>
+      </div>
+
+      {/* Waveform line */}
+      <div className="pointer-events-none absolute bottom-0 left-0 w-full opacity-30">
+        <svg viewBox="0 0 1440 320" className="h-32 w-full md:h-40">
+          <path
+            fill="none"
+            stroke="var(--color-primary)"
+            strokeWidth="1.5"
+            d="M0,160 C120,200 240,120 360,160 C480,200 600,240 720,160 C840,80 960,120 1080,160 C1200,200 1320,240 1440,160"
+          />
+        </svg>
       </div>
     </section>
   );
 }
 
-function HeroVisual() {
-  const bars = Array.from({ length: 56 });
+function FeaturesBento({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
   return (
-    <div className="relative">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.6, delay: 0.2 }}
-        className="rounded-2xl border border-border/80 bg-card/60 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] grain-overlay"
-      >
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span className="font-mono">interview.mp4</span>
-          <span className="font-mono tabular-nums">00:14:32</span>
+    <section id="features" className="border-t border-border/60 py-28">
+      <div className="mx-auto max-w-6xl px-6">
+        <div className="mb-14 flex items-end justify-between gap-6">
+          <h2 className="font-display text-4xl font-bold tracking-tight md:text-5xl">{t.feat_title}</h2>
+          <span className="hidden font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground md:block">
+            ／ 01 — 03
+          </span>
         </div>
-        <div className="mt-4 flex h-28 items-end gap-[3px]">
-          {bars.map((_, i) => {
-            const silent = i % 9 === 3 || i % 9 === 4 || i === 22 || i === 23 || i === 41;
-            const h = silent ? 8 : 20 + Math.abs(Math.sin(i * 1.3)) * 70;
-            return (
-              <motion.span
-                key={i}
-                initial={{ scaleY: 0.2, opacity: 0 }}
-                animate={{ scaleY: 1, opacity: silent ? 0.2 : 1 }}
-                transition={{ duration: 0.4, delay: 0.4 + i * 0.012 }}
-                className={`flex-1 origin-bottom rounded-sm ${silent ? "bg-muted-foreground/30" : "bg-foreground/80"}`}
-                style={{ height: `${h}%` }}
-              />
-            );
-          })}
-        </div>
-        <div className="mt-3 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-muted-foreground/40" /> silent
-            <span className="ml-3 h-2 w-2 rounded-full bg-foreground/80" /> voice
-          </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+          {/* Large feature: timeline cleanup */}
+          <BentoCard className="md:col-span-8 md:row-span-2" delay={0}>
+            <BentoNum>01</BentoNum>
+            <h3 className="mt-6 font-display text-3xl font-bold tracking-tight">{t.feat_1_t}</h3>
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">{t.feat_1_d}</p>
+            <WaveformVisual />
+          </BentoCard>
+
+          {/* Audio AI */}
+          <BentoCard className="md:col-span-4" delay={0.05}>
+            <BentoNum>02</BentoNum>
+            <h3 className="mt-6 font-display text-2xl font-bold tracking-tight">{t.feat_2_t}</h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{t.feat_2_d}</p>
+          </BentoCard>
+
+          {/* Ember stat tile */}
           <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.4 }}
-            className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary tabular-nums"
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="rounded-3xl bg-primary p-10 text-primary-foreground md:col-span-4"
           >
-            −4:18 trimmed
+            <p className="font-display text-5xl font-extrabold tracking-tight">~ minutos</p>
+            <p className="mt-4 text-sm font-medium opacity-80">
+              {t.impact_after} — {t.impact_after_list[t.impact_after_list.length - 1]}
+            </p>
           </motion.div>
+
+          {/* Color */}
+          <BentoCard className="md:col-span-8" delay={0.15}>
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <BentoNum>03</BentoNum>
+                <h3 className="mt-6 font-display text-3xl font-bold tracking-tight">{t.feat_3_t}</h3>
+                <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">{t.feat_3_d}</p>
+              </div>
+              <ColorChips />
+            </div>
+          </BentoCard>
         </div>
-      </motion.div>
+      </div>
+    </section>
+  );
+}
+
+function BentoCard({
+  children,
+  className = "",
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  delay?: number;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.5, delay }}
+      className={`group relative overflow-hidden rounded-3xl border border-border/80 bg-card/40 p-10 transition-colors hover:border-primary/30 ${className}`}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function BentoNum({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">{children}</span>
+  );
+}
+
+function WaveformVisual() {
+  const bars = Array.from({ length: 40 });
+  return (
+    <div className="mt-10 flex h-32 items-end gap-[3px] rounded-xl border border-border/60 bg-background/40 p-4">
+      {bars.map((_, i) => {
+        const silent = i % 8 === 3 || i % 11 === 5;
+        const h = silent ? 6 : 18 + Math.abs(Math.sin(i * 1.3)) * 80;
+        return (
+          <span
+            key={i}
+            className={`flex-1 origin-bottom rounded-sm ${silent ? "bg-muted-foreground/25" : "bg-foreground/80 group-hover:bg-primary"} transition-colors`}
+            style={{ height: `${h}%` }}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function Features({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
-  const items = [
-    { num: "01", title: t.feat_1_t, desc: t.feat_1_d },
-    { num: "02", title: t.feat_2_t, desc: t.feat_2_d },
-    { num: "03", title: t.feat_3_t, desc: t.feat_3_d },
+function ColorChips() {
+  const swatches = [
+    "oklch(0.22 0.02 30)",
+    "oklch(0.55 0.18 35)",
+    "oklch(0.78 0.12 60)",
+    "oklch(0.9 0.05 80)",
   ];
   return (
-    <section id="features" className="border-b border-border/60 py-20">
-      <div className="mx-auto max-w-6xl px-4">
-        <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t.feat_title}</h2>
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          {items.map((it, i) => (
-            <motion.div
-              key={it.title}
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-80px" }}
-              transition={{ duration: 0.5, delay: i * 0.08 }}
-              className="rounded-xl border border-border/80 bg-card/60 p-6"
-            >
-              <span className="font-mono text-[11px] tracking-widest text-primary">{it.num}</span>
-              <h3 className="mt-3 text-lg font-semibold">{it.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{it.desc}</p>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
+    <div className="hidden shrink-0 flex-col gap-2 md:flex">
+      {swatches.map((c) => (
+        <span key={c} className="h-10 w-16 rounded-md border border-border/60" style={{ background: c }} />
+      ))}
+    </div>
   );
 }
 
 function Impact({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
   return (
-    <section className="border-b border-border/60 py-20">
-      <div className="mx-auto max-w-6xl px-4">
-        <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t.impact_t}</h2>
-        <div className="mt-10 grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-border/80 bg-card/40 p-6">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              {t.impact_before}
+    <section className="border-t border-border/60 bg-card/20 py-28">
+      <div className="mx-auto max-w-6xl px-6">
+        <div className="grid items-start gap-16 md:grid-cols-2">
+          <div>
+            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">／ Impact</span>
+            <h2 className="mt-4 font-display text-4xl font-bold leading-tight tracking-tight md:text-5xl">
+              {t.impact_t}
+            </h2>
+            <p className="mt-6 max-w-md text-muted-foreground">{t.hero_sub}</p>
+
+            <div className="mt-10 space-y-5">
+              <ImpactRow label={t.impact_before} duration="~ 1–2h" items={t.impact_before_list} muted />
+              <ImpactRow label={t.impact_after} duration="~ minutos" items={t.impact_after_list} />
             </div>
-            <ul className="mt-4 space-y-3">
-              {t.impact_before_list.map((line) => (
-                <li key={line} className="flex items-center gap-3 text-sm text-muted-foreground/90">
-                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" /> {line}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-6 text-2xl font-semibold text-muted-foreground">~ 1–2h</p>
           </div>
-          <div className="rounded-xl border border-primary/30 bg-primary/5 p-6">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-primary">
-              {t.impact_after}
-            </div>
-            <ul className="mt-4 space-y-3">
-              {t.impact_after_list.map((line) => (
-                <li key={line} className="flex items-center gap-3 text-sm">
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary" /> {line}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-6 text-2xl font-semibold text-primary">~ minutos</p>
-          </div>
+
+          <ImpactVisual />
         </div>
       </div>
     </section>
   );
 }
 
+function ImpactRow({
+  label,
+  duration,
+  items,
+  muted = false,
+}: {
+  label: string;
+  duration: string;
+  items: readonly string[];
+  muted?: boolean;
+}) {
+  return (
+    <div className="border-l-2 pl-5" style={{ borderColor: muted ? "var(--color-border)" : "var(--color-primary)" }}>
+      <div className="flex items-baseline justify-between gap-4">
+        <span
+          className={`text-[11px] uppercase tracking-[0.22em] ${muted ? "text-muted-foreground" : "text-primary"}`}
+        >
+          {label}
+        </span>
+        <span
+          className={`font-display text-2xl font-bold tabular-nums ${muted ? "text-muted-foreground" : "text-primary"}`}
+        >
+          {duration}
+        </span>
+      </div>
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        {items.map((line) => (
+          <li key={line} className="font-mono text-xs tabular-nums">
+            · {line}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ImpactVisual() {
+  const cols = [24, 32, 16, 40, 56, 32, 48, 20, 36, 28, 44, 18];
+  return (
+    <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-border/80 bg-background/60 grain-overlay">
+      <div className="absolute inset-x-0 top-0 flex items-center justify-between px-6 py-4 text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+        <span>interview.mp4</span>
+        <span className="tabular-nums">00:14:32 → 00:10:14</span>
+      </div>
+      <div className="absolute left-1/2 top-0 h-full w-px bg-border" />
+      <div className="absolute inset-0 flex items-end px-6 pb-10">
+        <div className="grid w-full grid-cols-12 items-end gap-1">
+          {cols.map((h, i) => {
+            const after = i >= 6;
+            return (
+              <span
+                key={i}
+                className={after ? "rounded-sm bg-primary" : "rounded-sm bg-muted-foreground/30"}
+                style={{ height: `${(h / 56) * 60}%`, minHeight: 6 }}
+              />
+            );
+          })}
+        </div>
+      </div>
+      <div className="absolute bottom-4 left-6 right-6 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+        <span>{`/ ${"BEFORE"}`}</span>
+        <span className="text-primary">{`AFTER /`}</span>
+      </div>
+    </div>
+  );
+}
+
 function CtaStrip({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
   return (
-    <section className="py-20">
-      <div className="mx-auto max-w-4xl px-4 text-center">
-        <h2 className="text-4xl font-semibold tracking-tight">{t.hero_title}</h2>
-        <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">{t.hero_sub}</p>
-        <Button asChild size="lg" className="mt-8">
-          <Link to="/app">{t.hero_cta}</Link>
-        </Button>
+    <section className="py-32">
+      <div className="mx-auto max-w-4xl px-6">
+        <div className="relative overflow-hidden rounded-[40px] border border-border/80 bg-gradient-to-b from-card/80 to-transparent p-12 text-center md:p-20">
+          <span
+            aria-hidden
+            className="absolute left-1/2 top-0 h-[3px] w-64 -translate-x-1/2 bg-primary"
+          />
+          <h2 className="mx-auto max-w-2xl font-display text-4xl font-bold tracking-tight md:text-6xl">
+            {t.hero_title}
+          </h2>
+          <p className="mx-auto mt-6 max-w-xl text-muted-foreground">{t.hero_sub}</p>
+          <Button asChild size="lg" className="mt-10 rounded-sm px-10">
+            <Link to="/app">{t.hero_cta}</Link>
+          </Button>
+        </div>
       </div>
     </section>
   );

@@ -759,6 +759,26 @@ function AppPage() {
     ? PHASE_TO_STEP[phase as ProgressEvent["phase"]] ?? "export"
     : null;
 
+  // Smooth ETA based on elapsed time within current phase vs progress.
+  useEffect(() => {
+    if (!busy || progress <= 1 || progress >= 100) {
+      setEta(null);
+      return;
+    }
+    const elapsed = (Date.now() - phaseStartRef.current) / 1000;
+    if (elapsed < 1.5) return;
+    const rate = progress / elapsed; // % per second
+    if (rate <= 0) return;
+    const remainingPct = 100 - progress;
+    setEta((prev) => {
+      const next = remainingPct / rate;
+      // Light smoothing to avoid jitter
+      return prev == null ? next : prev * 0.6 + next * 0.4;
+    });
+  }, [progress, busy]);
+
+  const globalProgress = busy ? computeGlobalProgress(phase as string, progress) : 0;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <SiteHeader />

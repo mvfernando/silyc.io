@@ -67,6 +67,39 @@ const PHASE_TO_STEP: Record<ProgressEvent["phase"], StepKey> = {
   done: "export",
 };
 
+// Relative weight of each phase in the global progress bar (sums to ~1).
+const PHASE_WEIGHTS: Record<string, number> = {
+  load: 0.03,
+  probe: 0.04,
+  detect: 0.45,
+  audio: 0.08,
+  encode: 0.35,
+  upload: 0.05,
+  cloud: 0.45,
+  done: 0,
+  idle: 0,
+};
+const PHASE_ORDER = ["load", "probe", "detect", "audio", "encode", "upload", "done"];
+
+function computeGlobalProgress(phase: string, phaseProgress: number): number {
+  if (phase === "cloud") return Math.round(phaseProgress);
+  const idx = PHASE_ORDER.indexOf(phase);
+  if (idx < 0) return 0;
+  let acc = 0;
+  for (let i = 0; i < idx; i++) acc += PHASE_WEIGHTS[PHASE_ORDER[i]] ?? 0;
+  acc += (PHASE_WEIGHTS[phase] ?? 0) * (phaseProgress / 100);
+  return Math.min(99, Math.round(acc * 100));
+}
+
+function formatEta(seconds: number): string {
+  if (!isFinite(seconds) || seconds <= 0) return "—";
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
+}
+
 const CLOUD_ENV: "sandbox" | "production" =
   import.meta.env.MODE === "production" ? "production" : "sandbox";
 
@@ -109,6 +142,8 @@ function AppPage() {
 
   const [phase, setPhase] = useState<ProgressEvent["phase"] | "upload" | "cloud" | "idle">("idle");
   const [progress, setProgress] = useState(0);
+  const phaseStartRef = useRef<number>(0);
+  const [eta, setEta] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
   const [actualCredits, setActualCredits] = useState<number | null>(null);
@@ -146,6 +181,8 @@ function AppPage() {
       }
       if (next !== prev) {
         stepStartRef.current[next as string] = Date.now();
+        phaseStartRef.current = Date.now();
+        setEta(null);
         appendLog({
           level: "info",
           step: (PHASE_TO_STEP[next as ProgressEvent["phase"]] ?? "export") as StepKey,
@@ -722,6 +759,26 @@ function AppPage() {
     ? PHASE_TO_STEP[phase as ProgressEvent["phase"]] ?? "export"
     : null;
 
+  // Smooth ETA based on elapsed time within current phase vs progress.
+  useEffect(() => {
+    if (!busy || progress <= 1 || progress >= 100) {
+      setEta(null);
+      return;
+    }
+    const elapsed = (Date.now() - phaseStartRef.current) / 1000;
+    if (elapsed < 1.5) return;
+    const rate = progress / elapsed; // % per second
+    if (rate <= 0) return;
+    const remainingPct = 100 - progress;
+    setEta((prev) => {
+      const next = remainingPct / rate;
+      // Light smoothing to avoid jitter
+      return prev == null ? next : prev * 0.6 + next * 0.4;
+    });
+  }, [progress, busy]);
+
+  const globalProgress = busy ? computeGlobalProgress(phase as string, progress) : 0;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <SiteHeader />
@@ -881,21 +938,24 @@ function AppPage() {
 
         {busy && (
           <div className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
-            <StepIndicator active={activeStep} t={t} />
-            <div className="mt-5 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
+            <StepIndicator
+              active={activeStep}
+              t={t}
+              phaseProgress={progress}
+              paused={paused}
+            />
+            <div className="mt-5 flex items-baseline justify-between gap-4 text-sm">
+              <span className="text-foreground">
                 {paused ? t.paused : phaseLabel(phase)}
               </span>
-              <span className="font-mono text-xs text-muted-foreground">
-                {phase === "encode" || phase === "detect" || phase === "cloud" ? `${progress}%` : ""}
-              </span>
+              <div className="flex items-baseline gap-3 font-mono text-xs text-muted-foreground tabular-nums">
+                {eta != null && !paused && (
+                  <span>~{formatEta(eta)}</span>
+                )}
+                <span className="text-foreground">{globalProgress}%</span>
+              </div>
             </div>
-            <Progress
-              value={
-                phase === "encode" || phase === "detect" || phase === "cloud" ? progress : undefined
-              }
-              className="mt-2 h-1"
-            />
+            <Progress value={globalProgress} className="mt-2 h-1.5" />
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="ghost" onClick={handlePauseResume} disabled={phase === "upload" || phase === "cloud"}>
                 {paused ? t.resume : t.pause}
@@ -931,7 +991,11 @@ function AppPage() {
             size="lg"
           >
             {(validating || busy) && <Spinner className="mr-2" />}
-            {validating ? t.validating : busy ? t.processing : t.process}
+            {validating
+              ? t.validating
+              : busy
+                ? `${t.processing} ${globalProgress}%`
+                : t.process}
             {(validating || busy) && <span className="sr-only"> — {t.sr_busy}</span>}
           </Button>
         </div>
@@ -1199,10 +1263,14 @@ function StepIndicator({
   active,
   completed,
   t,
+  phaseProgress = 0,
+  paused = false,
 }: {
   active: StepKey | null;
   completed?: ResumeStepKey[];
   t: ReturnType<typeof useI18n>["t"];
+  phaseProgress?: number;
+  paused?: boolean;
 }) {
   const steps: { key: StepKey; label: string }[] = [
     { key: "silences", label: t.step_silences },
@@ -1213,24 +1281,42 @@ function StepIndicator({
   const idx = active ? steps.findIndex((s) => s.key === active) : -1;
   const completedSet = new Set<string>(completed ?? []);
   return (
-    <ol className="flex items-center gap-3 text-xs">
+    <ol className="flex items-stretch gap-3 text-xs">
       {steps.map((s, i) => {
         const done = i < idx || completedSet.has(s.key);
         const current = i === idx;
+        const fillPct = current ? Math.max(0, Math.min(100, phaseProgress)) : done ? 100 : 0;
         return (
-          <li key={s.key} className="flex flex-1 items-center gap-3">
-            <span
-              className={[
-                "grid h-6 w-6 place-items-center rounded-full border text-[11px] font-medium tabular-nums",
-                done && "border-primary/40 bg-primary/15 text-primary",
-                current && "border-primary bg-primary text-primary-foreground",
-                !done && !current && "border-border/80 text-muted-foreground",
-              ].filter(Boolean).join(" ")}
-            >
-              {i + 1}
-            </span>
-            <span className={current ? "text-foreground" : "text-muted-foreground"}>{s.label}</span>
-            {i < steps.length - 1 && <span className="flex-1 border-t border-border/60" />}
+          <li key={s.key} className="flex flex-1 flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span
+                className={[
+                  "grid h-6 w-6 shrink-0 place-items-center rounded-full border text-[11px] font-medium tabular-nums transition-colors",
+                  done && "border-primary/40 bg-primary/15 text-primary",
+                  current && "border-primary bg-primary text-primary-foreground",
+                  !done && !current && "border-border/80 text-muted-foreground",
+                ].filter(Boolean).join(" ")}
+              >
+                {done ? "✓" : i + 1}
+              </span>
+              <span
+                className={[
+                  "truncate",
+                  current ? "text-foreground" : done ? "text-foreground/80" : "text-muted-foreground",
+                ].join(" ")}
+              >
+                {s.label}
+              </span>
+            </div>
+            <div className="relative h-1 overflow-hidden rounded-full bg-border/60">
+              <div
+                className={[
+                  "h-full rounded-full bg-primary transition-[width] duration-300 ease-out",
+                  current && !paused && "animate-pulse",
+                ].filter(Boolean).join(" ")}
+                style={{ width: `${fillPct}%` }}
+              />
+            </div>
           </li>
         );
       })}

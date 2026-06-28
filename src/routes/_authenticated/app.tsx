@@ -979,6 +979,26 @@ function AppPage() {
                   setMinPause(p.minPause);
                   setPadding(p.padding);
                 }}
+                snapshot={{
+                  threshold,
+                  minPause,
+                  padding,
+                  removeSilence,
+                  enhanceAudio,
+                  colorGrade,
+                  cloud,
+                  exportOpts: exportOpts as unknown as Record<string, unknown>,
+                }}
+                onApplyCustom={(cp) => {
+                  setThreshold(cp.threshold);
+                  setMinPause(cp.minPause);
+                  setPadding(cp.padding);
+                  setRemoveSilence(cp.removeSilence);
+                  setEnhanceAudio(cp.enhanceAudio);
+                  setColorGrade(cp.colorGrade);
+                  setCloud(cp.cloud);
+                  if (cp.exportOpts) setExportOpts({ ...defaultExportOptions, ...(cp.exportOpts as ExportOptions) });
+                }}
               />
               <div className="grid gap-6 md:grid-cols-2">
               <SliderField

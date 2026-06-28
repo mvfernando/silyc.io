@@ -234,6 +234,11 @@ export function AgentWorkspace() {
               }
             }}
             onAskRefine={() => setShowRefine(true)}
+            onComment={(c) => {
+              if (runIdRef.current) {
+                void saveFeedback({ runId: runIdRef.current, comment: c });
+              }
+            }}
             onRefine={(choice) => {
               if (runIdRef.current) {
                 void saveFeedback({

@@ -64,7 +64,7 @@ const REFINEMENT_OPTIONS: Array<{ id: Exclude<RefinementChoice, "none" | "manual
 ];
 
 export function AgentWorkspace() {
-  const { t } = useI18n();
+  const i18n = useI18n();
   const navigate = useNavigate();
 
   const [stage, setStage] = useState<Stage>("upload");
@@ -195,7 +195,6 @@ export function AgentWorkspace() {
         {stage === "ready" && receipt && (
           <ReadyStage
             key="ready"
-            t={t}
             receipt={receipt}
             outputUrl={outputUrl}
             originalFile={file}
@@ -400,7 +399,6 @@ function ReadyStage({
   onManual,
   onNew,
 }: {
-  t: (k: string) => string;
   receipt: ValueReceipt;
   outputUrl: string | null;
   originalFile: File | null;

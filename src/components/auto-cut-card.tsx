@@ -13,6 +13,7 @@ import {
 } from "@/lib/replicate.functions";
 import { chunksToSilences, estimateTranscriptionCostUsd } from "@/lib/auto-cut";
 import { extractAudioForTranscription } from "@/lib/ffmpeg-processor";
+import { fingerprintFile } from "@/lib/file-hash";
 import type { SilenceRange } from "@/components/silence-timeline";
 
 type Labels = {
@@ -26,6 +27,8 @@ type Labels = {
   transcribe: string;
   analyzing: string;
   done: string;
+  cache: string;
+  cacheHit: string;
   fillers: string;
   estCost: string;
   estimate: string;
@@ -40,7 +43,9 @@ function fmtMinSec(s: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-type Phase = "idle" | "extract" | "upload" | "transcribe" | "analyze" | "done";
+type Phase = "idle" | "cache" | "extract" | "upload" | "transcribe" | "analyze" | "done";
+
+const TRANSCRIPTION_MODEL = "openai/whisper";
 
 export function AutoCutCard({
   file,
@@ -88,6 +93,50 @@ export function AutoCutCard({
       return;
     }
     cancelledRef.current = false;
+
+    // 1) Try cache by file fingerprint to avoid paying Replicate again
+    setPhase("cache");
+    setProgress(1);
+    let fileHash: string | null = null;
+    try {
+      fileHash = await fingerprintFile(file);
+      const { data: userData } = await supabase.auth.getUser();
+      const uid = userData.user?.id;
+      if (uid) {
+        const { data: cached } = await supabase
+          .from("transcriptions")
+          .select("language, text, chunks, duration_sec")
+          .eq("user_id", uid)
+          .eq("file_hash", fileHash)
+          .eq("model", TRANSCRIPTION_MODEL)
+          .maybeSingle();
+        if (cached && Array.isArray(cached.chunks) && cached.chunks.length > 0) {
+          const chunks = cached.chunks as Array<{ start: number; end: number; text: string }>;
+          setPhase("analyze");
+          setProgress(95);
+          const { silences, fillersRemoved } = chunksToSilences(
+            chunks,
+            totalDurationSec,
+            { removeFillers, language: cached.language ?? language ?? null },
+          );
+          setProgress(100);
+          setPhase("done");
+          onResult({
+            silences,
+            duration: totalDurationSec,
+            transcript: cached.text ?? "",
+            detectedLanguage: cached.language ?? null,
+            fillersRemoved,
+          });
+          toast.success(labels.cacheHit);
+          return;
+        }
+      }
+    } catch {
+      // Cache lookup is best-effort; on any failure continue with a fresh run.
+      fileHash = fileHash ?? null;
+    }
+
     setPhase("extract");
     setProgress(2);
     let audioBlob: Blob;
@@ -178,6 +227,32 @@ export function AutoCutCard({
     setProgress(100);
     setPhase("done");
     setPredictionId(null);
+
+    // Persist to cache (best-effort; ignore RLS / unique-violation errors)
+    if (fileHash) {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const uid = userData.user?.id;
+        if (uid) {
+          await supabase.from("transcriptions").upsert(
+            {
+              user_id: uid,
+              file_hash: fileHash,
+              model: TRANSCRIPTION_MODEL,
+              language: job.language,
+              duration_sec: totalDurationSec,
+              text: job.text,
+              chunks: job.chunks,
+              prediction_id: job.id,
+            },
+            { onConflict: "user_id,file_hash,model" },
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
     onResult({
       silences,
       duration: totalDurationSec,
@@ -203,7 +278,9 @@ export function AutoCutCard({
   };
 
   const phaseLabel =
-    phase === "extract"
+    phase === "cache"
+      ? labels.cache
+      : phase === "extract"
       ? labels.extract
       : phase === "upload"
         ? labels.upload

@@ -1080,22 +1080,47 @@ function AppPage() {
 
         {detection && detection.silences.length > 0 && (
           <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 {t.step_silences} · {t.step_timeline}
               </h2>
+              {keepOverrides.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setKeepOverrides(new Set())}
+                  className="text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  {keepOverrides.size} {t.timeline_overrides_count} · {t.timeline_reset_overrides}
+                </button>
+              )}
             </div>
             <SilenceTimeline
               silences={detection.silences}
               totalDuration={detection.duration}
-              removedSeconds={detection.silences.reduce((a, s) => a + Math.max(0, s.end - s.start), 0)}
+              removedSeconds={detection.silences.reduce(
+                (a, s, i) =>
+                  a + (keepOverrides.has(i) ? 0 : Math.max(0, s.end - s.start)),
+                0,
+              )}
+              keepOverrides={keepOverrides}
+              onToggle={(idx) => {
+                if (busy) return;
+                setKeepOverrides((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(idx)) next.delete(idx);
+                  else next.add(idx);
+                  return next;
+                });
+              }}
               labels={{
                 kept: t.timeline_kept,
                 removed: t.timeline_removed,
                 total: t.timeline_total,
                 cuts: t.timeline_cuts,
+                manualKept: t.timeline_manual_kept,
               }}
             />
+            <p className="mt-2 text-[11px] text-muted-foreground">{t.timeline_interactive_hint}</p>
           </section>
         )}
 

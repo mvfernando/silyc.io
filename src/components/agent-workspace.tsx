@@ -242,13 +242,13 @@ export function AgentWorkspace() {
             onRate={(r) => {
               setRating(r);
               if (runIdRef.current) {
-                void saveFeedback({ runId: runIdRef.current, rating: r });
+                void saveFeedback({ runId: runIdRef.current, rating: r, format: detectFormatFromReceipt(receipt) });
               }
             }}
             onAskRefine={() => setShowRefine(true)}
             onComment={(c) => {
               if (runIdRef.current) {
-                void saveFeedback({ runId: runIdRef.current, comment: c });
+                void saveFeedback({ runId: runIdRef.current, comment: c, format: detectFormatFromReceipt(receipt) });
               }
             }}
             onRefine={(choice) => {
@@ -256,6 +256,7 @@ export function AgentWorkspace() {
                 void saveFeedback({
                   runId: runIdRef.current,
                   refinementChoice: choice as FeedbackRefinement,
+                  format: detectFormatFromReceipt(receipt),
                 });
               }
               if (file) startAgent(file, choice);
@@ -265,6 +266,7 @@ export function AgentWorkspace() {
                 void saveFeedback({
                   runId: runIdRef.current,
                   refinementChoice: "manual",
+                  format: detectFormatFromReceipt(receipt),
                 });
               }
               navigate({ to: "/app", search: { legacy: "1" } as never });

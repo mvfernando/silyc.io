@@ -45,6 +45,7 @@ import { validateUpload, withBackoff, isTransientCloudError, type UploadValidati
 import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 import { PreviewModal } from "@/components/preview-modal";
 import { SilenceTimeline } from "@/components/silence-timeline";
+import { SILENCE_PRESETS, matchPreset, type SilencePreset } from "@/lib/silence-presets";
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
@@ -943,7 +944,17 @@ function AppPage() {
           </div>
 
           {removeSilence && (
-            <div className="grid gap-6 border-t border-border/60 pt-6 md:grid-cols-2">
+            <div className="space-y-5 border-t border-border/60 pt-6">
+              <PresetPicker
+                t={t}
+                current={matchPreset(threshold, minPause, padding)}
+                onPick={(p) => {
+                  setThreshold(p.threshold);
+                  setMinPause(p.minPause);
+                  setPadding(p.padding);
+                }}
+              />
+              <div className="grid gap-6 md:grid-cols-2">
               <SliderField
                 label={t.opt_threshold}
                 value={threshold}
@@ -973,6 +984,7 @@ function AppPage() {
                 decimals={2}
                 onChange={setPadding}
               />
+              </div>
             </div>
           )}
         </section>
@@ -1459,6 +1471,64 @@ function SelectField({
           ))}
         </SelectContent>
       </Select>
+    </div>
+  );
+}
+
+function PresetPicker({
+  t,
+  current,
+  onPick,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  current: ReturnType<typeof matchPreset>;
+  onPick: (p: SilencePreset) => void;
+}) {
+  const meta: Record<SilencePreset["id"], { label: string; desc: string }> = {
+    interview: { label: t.preset_interview, desc: t.preset_interview_d },
+    podcast: { label: t.preset_podcast, desc: t.preset_podcast_d },
+    lowvoice: { label: t.preset_lowvoice, desc: t.preset_lowvoice_d },
+    aggressive: { label: t.preset_aggressive, desc: t.preset_aggressive_d },
+    screencast: { label: t.preset_screencast, desc: t.preset_screencast_d },
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <Label className="text-sm">{t.preset_label}</Label>
+        <span className="text-[11px] text-muted-foreground">
+          {current === "custom" ? t.preset_custom : meta[current].label}
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {SILENCE_PRESETS.map((p) => {
+          const m = meta[p.id];
+          const active = current === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onPick(p)}
+              aria-pressed={active}
+              className={[
+                "rounded-lg border p-3 text-left transition-colors",
+                active
+                  ? "border-primary bg-primary/10"
+                  : "border-border/70 bg-card/30 hover:border-border hover:bg-card/60",
+              ].join(" ")}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={["text-sm font-medium", active ? "text-foreground" : "text-foreground/90"].join(" ")}>
+                  {m.label}
+                </span>
+                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                  {p.threshold}dB · {p.minPause.toFixed(2)}s · {p.padding.toFixed(2)}s
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{m.desc}</p>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

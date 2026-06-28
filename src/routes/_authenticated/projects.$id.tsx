@@ -692,6 +692,7 @@ function ProjectDetail() {
                 fileName={`${project.name}.${(activeVersion?.export_options as { container?: string } | undefined)?.container ?? "mp4"}`}
                 onDownloadLogs={downloadLogs}
                 onDownloadReport={downloadCreditsReport}
+                onPreview={openPreview}
               />
             )}
 

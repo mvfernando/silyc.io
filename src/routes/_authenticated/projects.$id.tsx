@@ -684,7 +684,7 @@ function ProjectDetail() {
               </div>
             ) : null}
 
-            {project.status === "done" && urls.output && (
+            {urls.output && (
               <PublicStatusPanel
                 t={t}
                 completedAt={project.updated_at ?? project.created_at}
@@ -696,7 +696,7 @@ function ProjectDetail() {
               />
             )}
 
-            {project.status === "done" && urls.output && (
+            {urls.output && (
               <AIEnhanceCard
                 t={t}
                 busy={enhancing}
@@ -706,6 +706,19 @@ function ProjectDetail() {
                 onCancel={handleCancelEnhance}
                 canceling={canceling}
               />
+            )}
+
+            {!urls.output && !isLoading && (
+              <section className="mt-8 rounded-xl border border-dashed border-border/70 bg-card/30 p-6 text-sm text-muted-foreground">
+                <div className="text-foreground">{t.proj_status[(project.status ?? "pending") as keyof typeof t.proj_status] ?? project.status}</div>
+                <p className="mt-1 text-xs">
+                  {project.status === "processing"
+                    ? "O processamento ainda está em andamento. Esta página atualiza sozinha quando o vídeo final ficar disponível."
+                    : project.status === "error"
+                      ? "O processamento falhou — abra o histórico de versões abaixo para ver os logs, ou reprocessar."
+                      : "Ainda não há vídeo final para este projeto. Volte ao workspace para processar."}
+                </p>
+              </section>
             )}
 
             <div ref={compareRef}>

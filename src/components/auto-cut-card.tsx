@@ -203,9 +203,11 @@ export function AutoCutCard({
   };
 
   const phaseLabel =
-    phase === "upload"
-      ? labels.upload
-      : phase === "transcribe"
+    phase === "extract"
+      ? labels.extract
+      : phase === "upload"
+        ? labels.upload
+        : phase === "transcribe"
         ? labels.transcribe
         : phase === "analyze"
           ? labels.analyzing

@@ -282,6 +282,8 @@ function AppPage() {
         return;
       }
       setFile(f);
+      detectionCacheRef.current = null;
+      setDetection(null);
       if (f.size > LOCAL_RENDER_MAX_BYTES) {
         setCloud(true);
         toast.info(t.auto_cloud_enabled);

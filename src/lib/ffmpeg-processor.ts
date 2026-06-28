@@ -325,7 +325,11 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
 
   const filter =
     `[0:v]select='${videoExpr}',setpts=N/FRAME_RATE/TB${scaleChain}${fpsChain}[v];` +
-    `[0:a]aselect='${audioExpr}',asetpts=N/SR/TB,loudnorm=I=-16:TP=-1.5:LRA=11[a]`;
+    // Short fade-in/out on each kept segment to avoid clicks/pops at cut points,
+    // then concat and normalize. 25ms fade is imperceptible but kills the seam.
+    `[0:a]aselect='${audioExpr}',asetpts=N/SR/TB,` +
+    `afade=t=in:st=0:d=0.025,afade=t=out:st=0:d=0.025,` +
+    `loudnorm=I=-16:TP=-1.5:LRA=11[a]`;
 
   onProgress?.({ phase: "audio", progress: 1 });
 

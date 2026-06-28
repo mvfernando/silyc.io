@@ -101,6 +101,7 @@ function AppPage() {
   const attemptsRef = useRef<number>(0);
   const lastPhaseRef = useRef<typeof phase>("idle");
   const [lastError, setLastError] = useState<MappedError | null>(null);
+  const cloudJobIdRef = useRef<string | null>(null);
 
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);

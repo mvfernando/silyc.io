@@ -163,6 +163,7 @@ function AppPage() {
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
   const [detection, setDetection] = useState<{ silences: SilenceRange[]; duration: number } | null>(null);
+  const [keepOverrides, setKeepOverrides] = useState<Set<number>>(new Set());
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<UploadValidation | null>(null);
 
@@ -285,6 +286,7 @@ function AppPage() {
       setFile(f);
       detectionCacheRef.current = null;
       setDetection(null);
+      setKeepOverrides(new Set());
       if (f.size > LOCAL_RENDER_MAX_BYTES) {
         setCloud(true);
         toast.info(t.auto_cloud_enabled);
@@ -294,6 +296,7 @@ function AppPage() {
         setResume(targetResume);
         if (targetResume.silences && targetResume.totalDuration) {
           setDetection({ silences: targetResume.silences, duration: targetResume.totalDuration });
+          setKeepOverrides(new Set());
         }
       } else {
         setResume(null);
@@ -590,12 +593,18 @@ function AppPage() {
       let renderedInCloud = false;
       let detected: SilenceRange[];
 
+      const cachedDet = detectionCacheRef.current;
+      const effectiveCachedSilences = cachedDet
+        ? cachedDet.silences.filter((_, i) => !keepOverrides.has(i))
+        : resume?.silences;
+      const effectiveCachedDuration = cachedDet?.duration ?? resume?.totalDuration;
+
       if (effectiveCloud) {
         // For cloud rendering we only run silence detection locally, then let
         // Shotstack render the final file. This avoids the previous full local
         // FFmpeg render before cloud, which could crash on larger uploads.
-        let silences = resume?.silences;
-        let totalDuration = resume?.totalDuration;
+        let silences = effectiveCachedSilences;
+        let totalDuration = effectiveCachedDuration;
         if (!silences || typeof totalDuration !== "number") {
           const det = await detectSilencesOnly(file, {
             thresholdDb: threshold,
@@ -610,6 +619,7 @@ function AppPage() {
             onDetectionComplete: ({ silences, totalDuration }) => {
               detectionCacheRef.current = { silences, duration: totalDuration };
               setDetection({ silences, duration: totalDuration });
+              setKeepOverrides(new Set());
               appendLog({
                 level: "info",
                 step: "silences",
@@ -675,11 +685,12 @@ function AppPage() {
             paddingSec: padding,
           exportOptions: exportOpts,
           controller,
-          cachedSilences: resume?.silences,
-          cachedDuration: resume?.totalDuration,
+          cachedSilences: effectiveCachedSilences,
+          cachedDuration: effectiveCachedDuration,
           onDetectionComplete: ({ silences, totalDuration }) => {
             detectionCacheRef.current = { silences, duration: totalDuration };
             setDetection({ silences, duration: totalDuration });
+            setKeepOverrides(new Set());
             appendLog({
               level: "info",
               step: "silences",
@@ -993,6 +1004,7 @@ function AppPage() {
                 detection={detection}
                 minPause={minPause}
                 padding={padding}
+                keepOverrides={keepOverrides}
               />
             </div>
           )}
@@ -1069,22 +1081,47 @@ function AppPage() {
 
         {detection && detection.silences.length > 0 && (
           <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 {t.step_silences} · {t.step_timeline}
               </h2>
+              {keepOverrides.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setKeepOverrides(new Set())}
+                  className="text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  {keepOverrides.size} {t.timeline_overrides_count} · {t.timeline_reset_overrides}
+                </button>
+              )}
             </div>
             <SilenceTimeline
               silences={detection.silences}
               totalDuration={detection.duration}
-              removedSeconds={detection.silences.reduce((a, s) => a + Math.max(0, s.end - s.start), 0)}
+              removedSeconds={detection.silences.reduce(
+                (a, s, i) =>
+                  a + (keepOverrides.has(i) ? 0 : Math.max(0, s.end - s.start)),
+                0,
+              )}
+              keepOverrides={keepOverrides}
+              onToggle={(idx) => {
+                if (busy) return;
+                setKeepOverrides((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(idx)) next.delete(idx);
+                  else next.add(idx);
+                  return next;
+                });
+              }}
               labels={{
                 kept: t.timeline_kept,
                 removed: t.timeline_removed,
                 total: t.timeline_total,
                 cuts: t.timeline_cuts,
+                manualKept: t.timeline_manual_kept,
               }}
             />
+            <p className="mt-2 text-[11px] text-muted-foreground">{t.timeline_interactive_hint}</p>
           </section>
         )}
 
@@ -1407,23 +1444,27 @@ function ImpactPreview({
   detection,
   minPause,
   padding,
+  keepOverrides,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   detection: { silences: SilenceRange[]; duration: number } | null;
   minPause: number;
   padding: number;
+  keepOverrides?: Set<number>;
 }) {
   const filtered = useMemo(() => {
     if (!detection) return [];
     const out: SilenceRange[] = [];
-    for (const s of detection.silences) {
+    for (let i = 0; i < detection.silences.length; i++) {
+      if (keepOverrides?.has(i)) continue;
+      const s = detection.silences[i];
       if (s.end - s.start < minPause) continue;
       const start = s.start + padding;
       const end = s.end - padding;
       if (end - start > 0.01) out.push({ start, end });
     }
     return out;
-  }, [detection, minPause, padding]);
+  }, [detection, minPause, padding, keepOverrides]);
 
   const removed = useMemo(
     () => filtered.reduce((a, s) => a + (s.end - s.start), 0),

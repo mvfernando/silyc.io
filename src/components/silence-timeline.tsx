@@ -18,22 +18,33 @@ export function SilenceTimeline({
   totalDuration,
   removedSeconds,
   labels,
+  keepOverrides,
+  onToggle,
 }: {
   silences: SilenceRange[];
   totalDuration: number;
   removedSeconds?: number;
-  labels: { kept: string; removed: string; total: string; cuts: string };
+  labels: { kept: string; removed: string; total: string; cuts: string; manualKept?: string };
+  keepOverrides?: Set<number>;
+  onToggle?: (index: number) => void;
 }) {
   const { segments, ticks } = useMemo(() => {
     const dur = Math.max(0.001, totalDuration);
-    const sorted = [...silences]
-      .filter((s) => s.end > s.start && s.start >= 0)
-      .sort((a, b) => a.start - b.start);
-    const segs: { kind: "keep" | "cut"; start: number; end: number }[] = [];
+    const indexed = silences
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => s.end > s.start && s.start >= 0)
+      .sort((a, b) => a.s.start - b.s.start);
+    const segs: { kind: "keep" | "cut" | "manual-keep"; start: number; end: number; index?: number }[] = [];
     let cursor = 0;
-    for (const s of sorted) {
+    for (const { s, i } of indexed) {
       if (s.start > cursor) segs.push({ kind: "keep", start: cursor, end: Math.min(s.start, dur) });
-      segs.push({ kind: "cut", start: Math.max(0, s.start), end: Math.min(s.end, dur) });
+      const overridden = keepOverrides?.has(i) ?? false;
+      segs.push({
+        kind: overridden ? "manual-keep" : "cut",
+        start: Math.max(0, s.start),
+        end: Math.min(s.end, dur),
+        index: i,
+      });
       cursor = Math.min(s.end, dur);
     }
     if (cursor < dur) segs.push({ kind: "keep", start: cursor, end: dur });
@@ -41,10 +52,10 @@ export function SilenceTimeline({
     const tickCount = 6;
     const ticks = Array.from({ length: tickCount + 1 }, (_, i) => (dur * i) / tickCount);
     return { segments: segs, ticks };
-  }, [silences, totalDuration]);
+  }, [silences, totalDuration, keepOverrides]);
 
   const dur = Math.max(0.001, totalDuration);
-  const cutCount = silences.filter((s) => s.end > s.start).length;
+  const cutCount = silences.filter((s, i) => s.end > s.start && !(keepOverrides?.has(i))).length;
 
   return (
     <div className="space-y-2">
@@ -58,6 +69,12 @@ export function SilenceTimeline({
             <span className="h-2 w-2 rounded-sm bg-red-500/70" />
             {labels.removed}
           </span>
+          {labels.manualKept && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm bg-amber-400/80" />
+              {labels.manualKept}
+            </span>
+          )}
         </div>
         <span className="tabular-nums">
           {cutCount} {labels.cuts} · {labels.total} {fmt(dur)}
@@ -68,20 +85,43 @@ export function SilenceTimeline({
       <div
         role="img"
         aria-label={`${cutCount} ${labels.cuts}`}
-        className="relative h-6 w-full overflow-hidden rounded-md border border-border/60 bg-muted/30"
+        className="relative h-7 w-full overflow-hidden rounded-md border border-border/60 bg-muted/30"
       >
         {segments.map((seg, i) => {
           const left = (seg.start / dur) * 100;
           const width = Math.max(0.15, ((seg.end - seg.start) / dur) * 100);
+          const isInteractive = !!onToggle && (seg.kind === "cut" || seg.kind === "manual-keep") && seg.index !== undefined;
+          const baseClass =
+            seg.kind === "cut"
+              ? "bg-red-500/55 hover:bg-red-500/75"
+              : seg.kind === "manual-keep"
+                ? "bg-amber-400/70 hover:bg-amber-400/90"
+                : "bg-emerald-500/45";
+          const label =
+            seg.kind === "cut"
+              ? labels.removed
+              : seg.kind === "manual-keep"
+                ? (labels.manualKept ?? labels.kept)
+                : labels.kept;
+          const title = `${label}: ${fmt(seg.start)} → ${fmt(seg.end)}`;
+          if (isInteractive) {
+            return (
+              <button
+                key={i}
+                type="button"
+                title={title}
+                aria-label={title}
+                onClick={() => onToggle!(seg.index!)}
+                className={`absolute top-0 h-full cursor-pointer border-l border-r border-background/40 transition-colors ${baseClass}`}
+                style={{ left: `${left}%`, width: `${width}%` }}
+              />
+            );
+          }
           return (
             <div
               key={i}
-              title={`${seg.kind === "cut" ? labels.removed : labels.kept}: ${fmt(seg.start)} → ${fmt(seg.end)}`}
-              className={
-                seg.kind === "cut"
-                  ? "absolute top-0 h-full bg-red-500/55"
-                  : "absolute top-0 h-full bg-emerald-500/45"
-              }
+              title={title}
+              className={`absolute top-0 h-full ${baseClass}`}
               style={{ left: `${left}%`, width: `${width}%` }}
             />
           );

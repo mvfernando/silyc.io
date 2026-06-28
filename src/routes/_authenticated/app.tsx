@@ -43,6 +43,7 @@ import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.func
 import { mapError, type MappedError } from "@/lib/error-mapper";
 import { validateUpload, withBackoff, isTransientCloudError, type UploadValidation, type ValidationCheck } from "@/lib/validate-upload";
 import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
+import { PreviewModal } from "@/components/preview-modal";
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
@@ -161,6 +162,34 @@ function AppPage() {
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<UploadValidation | null>(null);
 
+  type ResultState = {
+    projectId: string;
+    projectName: string;
+    sourceUrl: string;
+    outputUrl: string;
+    fileName: string;
+    mime: string;
+    ext: string;
+    originalDuration: number;
+    finalDuration: number;
+    removedSeconds: number;
+    silenceCount: number;
+    cloud: boolean;
+    credits: number;
+  };
+  const [result, setResult] = useState<ResultState | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Revoke object URLs when result changes / on unmount
+  useEffect(() => {
+    return () => {
+      if (result) {
+        try { URL.revokeObjectURL(result.sourceUrl); } catch {}
+        try { URL.revokeObjectURL(result.outputUrl); } catch {}
+      }
+    };
+  }, [result]);
+
   const appendLog = useCallback((entry: Omit<JobLogEntry, "ts">) => {
     setLogs((prev) => [...prev, { ts: Date.now(), ...entry }]);
   }, []);
@@ -240,6 +269,7 @@ function AppPage() {
     if (!f) return;
     setValidating(true);
     setValidation(null);
+    setResult(null);
     try {
       const v = await validateUpload(f);
       setValidation(v);
@@ -718,7 +748,32 @@ function AppPage() {
           onClick: () => navigate({ to: "/projects/$id", params: { id: finishedId } }),
         },
       });
-      navigate({ to: "/projects/$id", params: { id: finishedId } });
+      // Expose result inline so the user can preview/download right here,
+      // without being kicked to the project detail page.
+      try {
+        const sourceUrl = URL.createObjectURL(file);
+        const outputUrl = URL.createObjectURL(outputBlob);
+        setResult({
+          projectId: finishedId,
+          projectName: name || file.name,
+          sourceUrl,
+          outputUrl,
+          fileName: `${name || file.name.replace(/\.[^.]+$/, "")}.${outputExt}`,
+          mime: outputMime,
+          ext: outputExt,
+          originalDuration: stats.originalDuration,
+          finalDuration: stats.finalDuration,
+          removedSeconds: stats.removedSeconds,
+          silenceCount: stats.silenceCount,
+          cloud: renderedInCloud,
+          credits,
+        });
+      } catch (e) {
+        console.error("failed to expose local preview", e);
+      }
+      setBusy(false);
+      setPaused(false);
+      controllerRef.current = null;
     } catch (err: unknown) {
       const cancelled = err instanceof CancelledError || controller.isCancelled();
       const lastPhase = phase as string;
@@ -967,6 +1022,18 @@ function AppPage() {
           </div>
         )}
 
+        {result && !busy && (
+          <ResultPanel
+            t={t}
+            result={result}
+            onPreview={() => setPreviewOpen(true)}
+            onOpenProject={() =>
+              navigate({ to: "/projects/$id", params: { id: result.projectId } })
+            }
+            onDismiss={() => setResult(null)}
+          />
+        )}
+
         <div className="mt-10 flex flex-col items-end gap-2">
           {lastError && !busy && !validating && (
             <div
@@ -1000,7 +1067,99 @@ function AppPage() {
           </Button>
         </div>
       </main>
+      <PreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        sourceUrl={result?.sourceUrl}
+        outputUrl={result?.outputUrl}
+        downloadUrl={result?.outputUrl}
+        downloadName={result?.fileName}
+      />
     </div>
+  );
+}
+
+function ResultPanel({
+  t,
+  result,
+  onPreview,
+  onOpenProject,
+  onDismiss,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  result: {
+    projectName: string;
+    sourceUrl: string;
+    outputUrl: string;
+    fileName: string;
+    originalDuration: number;
+    finalDuration: number;
+    removedSeconds: number;
+    silenceCount: number;
+    cloud: boolean;
+    credits: number;
+  };
+  onPreview: () => void;
+  onOpenProject: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <section className="mt-6 rounded-xl border border-primary/30 bg-primary/5 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-primary">
+            {t.phase_done}
+          </div>
+          <p className="mt-2 text-sm text-foreground">{result.projectName}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            −{formatDuration(result.removedSeconds)} · {formatDuration(result.finalDuration)} / {formatDuration(result.originalDuration)}
+            {result.cloud ? ` · ${result.credits} cr` : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={onPreview}>
+            {t.preview_open}
+          </Button>
+          <Button asChild>
+            <a href={result.outputUrl} download={result.fileName}>
+              {t.proj_download}
+            </a>
+          </Button>
+          <Button variant="ghost" onClick={onOpenProject}>
+            {t.view_project}
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="rounded-lg border border-border/60 bg-background/30 p-3">
+          <div className="mb-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+            {t.proj_before}
+          </div>
+          <video
+            src={result.sourceUrl}
+            controls
+            className="aspect-video w-full rounded-md bg-black"
+          />
+        </div>
+        <div className="rounded-lg border border-primary/30 bg-background/30 p-3">
+          <div className="mb-2 text-[11px] uppercase tracking-wider text-primary">
+            {t.proj_after}
+          </div>
+          <video
+            src={result.outputUrl}
+            controls
+            className="aspect-video w-full rounded-md bg-black"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <Button variant="ghost" size="sm" onClick={onDismiss}>
+          {t.resume_discard}
+        </Button>
+      </div>
+    </section>
   );
 }
 

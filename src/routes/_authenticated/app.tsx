@@ -954,6 +954,16 @@ function AppPage() {
                 decimals={2}
                 onChange={setMinPause}
               />
+              <SliderField
+                label={t.opt_padding}
+                value={padding}
+                unit="s"
+                min={0}
+                max={1}
+                step={0.05}
+                decimals={2}
+                onChange={setPadding}
+              />
             </div>
           )}
         </section>

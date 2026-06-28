@@ -1444,23 +1444,27 @@ function ImpactPreview({
   detection,
   minPause,
   padding,
+  keepOverrides,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   detection: { silences: SilenceRange[]; duration: number } | null;
   minPause: number;
   padding: number;
+  keepOverrides?: Set<number>;
 }) {
   const filtered = useMemo(() => {
     if (!detection) return [];
     const out: SilenceRange[] = [];
-    for (const s of detection.silences) {
+    for (let i = 0; i < detection.silences.length; i++) {
+      if (keepOverrides?.has(i)) continue;
+      const s = detection.silences[i];
       if (s.end - s.start < minPause) continue;
       const start = s.start + padding;
       const end = s.end - padding;
       if (end - start > 0.01) out.push({ start, end });
     }
     return out;
-  }, [detection, minPause, padding]);
+  }, [detection, minPause, padding, keepOverrides]);
 
   const removed = useMemo(
     () => filtered.reduce((a, s) => a + (s.end - s.start), 0),

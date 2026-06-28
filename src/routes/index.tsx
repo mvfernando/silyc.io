@@ -315,11 +315,23 @@ function ImpactVisual() {
         <div className="grid w-full grid-cols-12 items-end gap-1">
           {cols.map((h, i) => {
             const after = i >= 6;
+            const targetH = `${(h / 56) * 60}%`;
             return (
-              <span
+              <motion.span
                 key={i}
-                className={after ? "rounded-sm bg-primary" : "rounded-sm bg-muted-foreground/30"}
-                style={{ height: `${(h / 56) * 60}%`, minHeight: 6 }}
+                initial={{ height: after ? "6px" : targetH, opacity: 0.4 }}
+                whileInView={{
+                  height: after ? targetH : "6px",
+                  opacity: 1,
+                }}
+                viewport={{ once: true, margin: "-80px" }}
+                transition={{
+                  duration: 0.6,
+                  delay: after ? 0.6 + (i - 6) * 0.08 : i * 0.08,
+                  ease: "easeOut",
+                }}
+                className={`rounded-sm ${after ? "bg-primary" : "bg-muted-foreground/30"}`}
+                style={{ minHeight: 6 }}
               />
             );
           })}

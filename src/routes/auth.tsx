@@ -13,8 +13,8 @@ import { SiteHeader } from "@/components/site-header";
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "SilentCut — Entrar" },
-      { name: "description", content: "Entre na sua conta SilentCut para processar e organizar seus vídeos." },
+      { title: "Silyc — Entrar" },
+      { name: "description", content: "Entre na sua conta Silyc para processar e organizar seus vídeos." },
     ],
   }),
   component: AuthPage,

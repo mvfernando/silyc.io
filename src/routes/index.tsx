@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "SilentCut — Edição limpa em um clique" },
+      { title: "Silyc — Edição limpa em um clique" },
       { name: "description", content: "Remove silêncios, pausas e ruídos do seu vídeo em minutos. Pós-produção automatizada com IA." },
-      { property: "og:title", content: "SilentCut — Edição limpa em um clique" },
+      { property: "og:title", content: "Silyc — Edição limpa em um clique" },
       { property: "og:description", content: "Pós-produção automatizada: remove silêncios, otimiza áudio e aplica color grading cinematográfico." },
     ],
   }),

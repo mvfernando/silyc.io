@@ -52,7 +52,7 @@ export const Route = createFileRoute("/_authenticated/app")({
     reprocess: typeof s.reprocess === "string" ? s.reprocess : undefined,
     resume: typeof s.resume === "string" ? s.resume : undefined,
   }),
-  head: () => ({ meta: [{ title: "SilentCut — Novo projeto" }] }),
+  head: () => ({ meta: [{ title: "Silyc — Novo projeto" }] }),
   component: AppPage,
 });
 

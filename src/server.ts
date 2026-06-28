@@ -3,6 +3,21 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
+// Startup validation: report which cloud-denoise providers are wired.
+// fal.ai is opt-in via FAL_KEY; when absent, the orchestrator skips it
+// instead of recording a per-call "not configured" failure.
+(() => {
+  const replicate = Boolean(process.env.REPLICATE_API_TOKEN);
+  const fal = Boolean(process.env.FAL_KEY);
+  const enabled = [replicate && "replicate", fal && "fal"].filter(Boolean);
+  if (enabled.length === 0) {
+    console.warn("[startup] cloud-denoise disabled: neither REPLICATE_API_TOKEN nor FAL_KEY set");
+  } else {
+    console.log(`[startup] cloud-denoise providers enabled: ${enabled.join(", ")}`);
+    if (!fal) console.log("[startup] fal.ai disabled (FAL_KEY not set)");
+  }
+})();
+
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };

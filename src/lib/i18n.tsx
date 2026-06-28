@@ -340,6 +340,11 @@ const dict = {
     agent_reaction_meh: "Precisa melhorar",
     agent_reaction_thanks: "Obrigado pelo feedback",
     agent_reaction_meh_hint: "Experimente “Refinar com IA” para uma segunda passagem.",
+    // ---- Comment ----
+    agent_comment_label: "Comentário (opcional)",
+    agent_comment_placeholder: "O que gostaste ou o que queres ajustar?",
+    agent_comment_save: "Guardar comentário",
+    agent_comment_saved: "Comentário guardado",
     // ---- History ----
     agent_history_title: "Histórico de reações",
     agent_history_empty: "Sem reações anteriores.",

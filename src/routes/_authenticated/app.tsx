@@ -1074,6 +1074,8 @@ function AppPage() {
             transcribe: t.autocut_phase_transcribe,
             analyzing: t.autocut_phase_analyze,
             done: t.autocut_phase_done,
+            cache: t.autocut_phase_cache,
+            cacheHit: t.autocut_cache_hit,
             fillers: t.autocut_remove_fillers,
             estCost: t.autocut_est_cost,
             estimate: t.autocut_estimate,

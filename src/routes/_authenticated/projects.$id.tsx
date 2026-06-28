@@ -628,8 +628,17 @@ function ProjectDetail() {
           ← {t.proj_back}
         </Link>
 
-        {isLoading || !project ? (
-          <div className="mt-16 text-center text-sm text-muted-foreground">…</div>
+        {isLoading ? (
+          <div className="mt-16 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> {t.processing}
+          </div>
+        ) : !project ? (
+          <MissingProject
+            t={t}
+            id={id}
+            error={projectError instanceof Error ? projectError.message : null}
+            onBack={() => navigate({ to: "/projects" })}
+          />
         ) : (
           <>
             <div className="mt-6 flex flex-wrap items-end justify-between gap-4">

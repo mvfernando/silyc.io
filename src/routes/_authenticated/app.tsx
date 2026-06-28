@@ -272,7 +272,10 @@ function AppPage() {
     if (!targetResume) return;
     setThreshold(targetResume.settings.threshold);
     setMinPause(targetResume.settings.minPause);
+    if (typeof targetResume.settings.padding === "number") setPadding(targetResume.settings.padding);
     setRemoveSilence(targetResume.settings.removeSilence);
+    if (typeof targetResume.settings.enhanceAudio === "boolean") setEnhanceAudio(targetResume.settings.enhanceAudio);
+    if (typeof targetResume.settings.colorGrade === "boolean") setColorGrade(targetResume.settings.colorGrade);
     setExportOpts({ ...defaultExportOptions, ...targetResume.exportOpts });
     setName(targetResume.projectName);
     setCloud(!!targetResume.cloud);

@@ -461,6 +461,7 @@ function ReadyStage({
   rating,
   onRate,
   onAskRefine,
+  onComment,
   onRefine,
   onManual,
   onNew,
@@ -479,6 +480,7 @@ function ReadyStage({
   rating: FeedbackRating | null;
   onRate: (r: FeedbackRating) => void;
   onAskRefine: () => void;
+  onComment: (comment: string) => void;
   onRefine: (choice: RefinementChoice) => void;
   onManual: () => void;
   onNew: () => void;

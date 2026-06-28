@@ -1012,6 +1012,7 @@ function AppPage() {
               t={t}
               phaseProgress={progress}
               paused={paused}
+              eta={eta}
             />
             <div className="mt-5 flex items-baseline justify-between gap-4 text-sm">
               <span className="text-foreground">

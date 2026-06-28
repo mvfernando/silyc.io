@@ -407,6 +407,186 @@ export function formatDuration(seconds: number): string {
   return `${s}s`;
 }
 
+/* ------------------------------------------------------------------ */
+/* Audio analysis & mastering                                          */
+/* ------------------------------------------------------------------ */
+
+export type AudioMetrics = {
+  /** Integrated loudness (LUFS, negative). NaN when not measurable. */
+  integratedLufs: number;
+  /** Estimated noise floor in dB (p5 of frame RMS outside speech). */
+  noiseFloorDb: number;
+  /** Estimated speech level in dB (p50 of frame RMS inside speech windows). */
+  speechLevelDb: number;
+  /** SNR in dB = speechLevelDb − noiseFloorDb. */
+  snrDb: number;
+};
+
+export type SpeechWindow = { start: number; end: number };
+
+/** Extract per-frame RMS dB and integrated LUFS from a video/audio file. */
+export async function analyzeAudio(
+  file: File,
+  speechWindows: SpeechWindow[] = [],
+  onLog?: (msg: string) => void,
+): Promise<AudioMetrics> {
+  const ffmpeg = await loadFFmpeg(onLog);
+  const inputName = "analyze_in." + (file.name.split(".").pop() || "mp4");
+  await ffmpeg.writeFile(inputName, await fetchFile(file));
+
+  let logBuf = "";
+  const handler = ({ message }: { message: string }) => {
+    logBuf += message + "\n";
+  };
+  ffmpeg.on("log", handler);
+  try {
+    // astats per-frame RMS in dB, plus ebur128 integrated LUFS in the summary.
+    await ffmpeg.exec([
+      "-i", inputName,
+      "-vn",
+      "-af",
+      "astats=metadata=1:reset=0:length=0.2,ametadata=print:key=lavfi.astats.Overall.RMS_level,ebur128=peak=true",
+      "-f", "null", "-",
+    ]);
+  } finally {
+    ffmpeg.off("log", handler);
+    try { await ffmpeg.deleteFile(inputName); } catch {}
+  }
+
+  // Parse RMS frames: lines look like
+  //   frame:123 pts:... pts_time:0.640
+  //   lavfi.astats.Overall.RMS_level=-37.412345
+  type Frame = { t: number; rmsDb: number };
+  const frames: Frame[] = [];
+  const lines = logBuf.split("\n");
+  let lastT = 0;
+  for (const line of lines) {
+    const tm = line.match(/pts_time:(\d+(?:\.\d+)?)/);
+    if (tm) {
+      lastT = parseFloat(tm[1]);
+      continue;
+    }
+    const rm = line.match(/lavfi\.astats\.Overall\.RMS_level=(-?\d+(?:\.\d+)?)/);
+    if (rm) {
+      const v = parseFloat(rm[1]);
+      if (isFinite(v)) frames.push({ t: lastT, rmsDb: v });
+    }
+  }
+
+  // Integrated LUFS from ebur128 summary.
+  let integratedLufs = NaN;
+  const lufsMatch = logBuf.match(/Integrated loudness:[\s\S]*?I:\s*(-?\d+(?:\.\d+)?)\s*LUFS/);
+  if (lufsMatch) integratedLufs = parseFloat(lufsMatch[1]);
+
+  const inSpeech = (t: number) =>
+    speechWindows.some((w) => t >= w.start && t <= w.end);
+
+  const speechFrames = speechWindows.length > 0 ? frames.filter((f) => inSpeech(f.t)) : frames;
+  const nonSpeechFrames = speechWindows.length > 0 ? frames.filter((f) => !inSpeech(f.t)) : frames;
+
+  const percentile = (arr: number[], p: number): number => {
+    if (arr.length === 0) return NaN;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1))));
+    return sorted[idx];
+  };
+
+  // RMS values are negative dB. "Higher" (closer to 0) = louder.
+  const speechLevelDb = percentile(speechFrames.map((f) => f.rmsDb), 0.5);
+  const noiseFloorDb = percentile(nonSpeechFrames.map((f) => f.rmsDb), 0.05);
+  const snrDb = isFinite(speechLevelDb) && isFinite(noiseFloorDb)
+    ? speechLevelDb - noiseFloorDb
+    : NaN;
+
+  return { integratedLufs, noiseFloorDb, speechLevelDb, snrDb };
+}
+
+export type MasterProfile = "ffmpeg-light" | "ffmpeg-aggressive";
+
+/** Apply an audio cleanup pipeline over `inputFile` and remux against its video. */
+export async function applyAudioMaster(
+  inputFile: File,
+  profile: MasterProfile,
+  opts: {
+    container?: ExportOptions["container"];
+    controller?: Controller;
+    onProgress?: (ratio: number) => void;
+    onLog?: (msg: string) => void;
+    /** External cleaned audio (m4a/mp3/wav) to mux instead of source audio. */
+    externalAudio?: Blob;
+  } = {},
+): Promise<Blob> {
+  const { container = "mp4", controller, onProgress, onLog, externalAudio } = opts;
+  const ffmpeg = await loadFFmpeg(onLog);
+  await waitWhilePaused(controller);
+
+  const ext = inputFile.name.split(".").pop()?.toLowerCase() || "mp4";
+  const inputName = `master_in.${ext}`;
+  await ffmpeg.writeFile(inputName, await fetchFile(inputFile));
+
+  let extraInput: string | null = null;
+  if (externalAudio) {
+    extraInput = "master_aux.audio";
+    await ffmpeg.writeFile(extraInput, await fetchFile(externalAudio));
+  }
+
+  // Profile parameters.
+  const nr = profile === "ffmpeg-aggressive" ? 18 : 8;
+  const dynaG = profile === "ffmpeg-aggressive" ? 5 : 7;
+
+  // afftdn=nr is in dB of reduction (0..97). afftdn=nf is the noise floor in dB.
+  const af = [
+    "highpass=f=80",
+    `afftdn=nr=${nr}:nf=-25`,
+    `dynaudnorm=g=${dynaG}:m=10`,
+    "loudnorm=I=-16:TP=-1.5:LRA=11",
+    "afade=t=in:st=0:d=0.02",
+  ].join(",");
+
+  const outName = `master_out.${container}`;
+
+  ffmpeg.on("progress", ({ progress }) => {
+    onProgress?.(Math.max(0, Math.min(1, progress)));
+  });
+
+  const args: string[] = ["-i", inputName];
+  if (extraInput) args.push("-i", extraInput);
+
+  if (extraInput) {
+    // Process the external audio, copy the video.
+    args.push(
+      "-map", "0:v", "-map", "1:a",
+      "-af", af,
+      "-c:v", "copy",
+      "-c:a", "aac", "-b:a", "192k",
+    );
+  } else {
+    args.push(
+      "-map", "0:v", "-map", "0:a",
+      "-af", af,
+      "-c:v", "copy",
+      "-c:a", "aac", "-b:a", "192k",
+    );
+  }
+  if (container === "mp4" || container === "mov") {
+    args.push("-movflags", "+faststart");
+  }
+  args.push(outName);
+
+  await ffmpeg.exec(args);
+  if (controller?.isCancelled()) throw new CancelledError();
+
+  const data = (await ffmpeg.readFile(outName)) as Uint8Array;
+  try {
+    await ffmpeg.deleteFile(inputName);
+    if (extraInput) await ffmpeg.deleteFile(extraInput);
+    await ffmpeg.deleteFile(outName);
+  } catch {}
+
+  const mime = container === "webm" ? "video/webm" : container === "mov" ? "video/quicktime" : "video/mp4";
+  return new Blob([data.buffer as ArrayBuffer], { type: mime });
+}
+
 /**
  * Extract a small mono 16 kHz MP3 from the source file, suitable for
  * sending to a speech-to-text API. Massively reduces upload size and

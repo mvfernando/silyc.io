@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   runCloudDenoise,
   CloudDenoiseAllFailed,
+  defaultDenoiseProviders,
   type DenoiseProvider,
 } from "../cloud-denoise";
 
@@ -82,5 +83,23 @@ describe("runCloudDenoise — Replicate → fal.ai fallback chain", () => {
       throw new Error("boom");
     });
     await expect(runCloudDenoise("u", [replicate])).rejects.toBeInstanceOf(CloudDenoiseAllFailed);
+  });
+});
+
+describe("defaultDenoiseProviders — gated by configured secrets", () => {
+  it("includes both providers by default", () => {
+    const names = defaultDenoiseProviders().map((p) => p.name);
+    expect(names).toEqual(["replicate", "fal"]);
+  });
+  it("skips fal when FAL_KEY is not configured", () => {
+    const names = defaultDenoiseProviders({ replicate: true, fal: false }).map((p) => p.name);
+    expect(names).toEqual(["replicate"]);
+  });
+  it("skips replicate when REPLICATE_API_TOKEN is not configured", () => {
+    const names = defaultDenoiseProviders({ replicate: false, fal: true }).map((p) => p.name);
+    expect(names).toEqual(["fal"]);
+  });
+  it("returns an empty list when nothing is configured", () => {
+    expect(defaultDenoiseProviders({ replicate: false, fal: false })).toEqual([]);
   });
 });

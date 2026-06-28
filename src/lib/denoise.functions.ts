@@ -132,3 +132,15 @@ export const denoiseAudioFal = createServerFn({ method: "POST" })
     if (!url) throw new Error("fal succeeded without audio url");
     return { url, provider: "fal", requestId: j.request_id };
   });
+
+/**
+ * Reports which cloud-denoise providers are configured on the server.
+ * Read from process.env at call time so the orchestrator can skip
+ * providers whose secret is missing instead of relying on a runtime
+ * "not configured" error per attempt.
+ */
+export const denoiseProvidersStatus = createServerFn({ method: "GET" })
+  .handler(async (): Promise<{ replicate: boolean; fal: boolean }> => ({
+    replicate: Boolean(process.env.REPLICATE_API_TOKEN),
+    fal: Boolean(process.env.FAL_KEY),
+  }));

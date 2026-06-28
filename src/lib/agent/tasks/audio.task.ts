@@ -101,7 +101,7 @@ async function uploadAudioForDenoise(blob: Blob, userId: string | null): Promise
  */
 function makeDefaultCloudDenoise(
   input: AgentInput,
-  providers: DenoiseProvider[],
+  providers: DenoiseProvider[] | null,
   onLog: (msg: string) => void,
 ) {
   return async (audioFile: File) => {
@@ -109,7 +109,15 @@ function makeDefaultCloudDenoise(
     const audioMp3 = await extractAudioForTranscription(audioFile);
     onLog("cloud-denoise: uploading audio for providers");
     const audioUrl = await uploadAudioForDenoise(audioMp3, input.userId);
-    const result = await runCloudDenoise(audioUrl, providers, onLog);
+    let chain = providers;
+    if (!chain) {
+      const { denoiseProvidersStatus } = await import("@/lib/denoise.functions");
+      const status = await denoiseProvidersStatus();
+      chain = defaultDenoiseProviders({ replicate: status.replicate, fal: status.fal });
+      onLog(`cloud-denoise: enabled providers = [${chain.map((p) => p.name).join(", ") || "none"}]`);
+      if (chain.length === 0) throw new Error("no cloud-denoise providers configured");
+    }
+    const result = await runCloudDenoise(audioUrl, chain, onLog);
     const fetched = await fetch(result.enhancedAudioUrl);
     if (!fetched.ok) throw new Error(`download enhanced audio: ${fetched.status}`);
     return { enhancedAudio: await fetched.blob(), result };
@@ -190,7 +198,7 @@ export async function runAudioTask(
   if (profile === "cloud-denoise") {
     const denoise =
       ctx.cloudDenoise ??
-      makeDefaultCloudDenoise(input, ctx.cloudDenoiseProviders ?? defaultDenoiseProviders(), ctx.onLog);
+      makeDefaultCloudDenoise(input, ctx.cloudDenoiseProviders ?? null, ctx.onLog);
     try {
       const cloud = await denoise(workFile);
       enhancedAudio = cloud.enhancedAudio;

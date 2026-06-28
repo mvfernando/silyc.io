@@ -16,6 +16,7 @@ import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects.$id'
+import { Route as ApiPublicHealthDenoiseRouteImport } from './routes/api/public/health.denoise'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -51,6 +52,11 @@ const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedProjectsRoute,
 } as any)
+const ApiPublicHealthDenoiseRoute = ApiPublicHealthDenoiseRouteImport.update({
+  id: '/api/public/health/denoise',
+  path: '/api/public/health/denoise',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AuthenticatedAppRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/app': typeof AuthenticatedAppRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,12 +85,27 @@ export interface FileRoutesById {
   '/_authenticated/app': typeof AuthenticatedAppRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/admin' | '/app' | '/projects' | '/projects/$id'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/admin'
+    | '/app'
+    | '/projects'
+    | '/projects/$id'
+    | '/api/public/health/denoise'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/admin' | '/app' | '/projects' | '/projects/$id'
+  to:
+    | '/'
+    | '/auth'
+    | '/admin'
+    | '/app'
+    | '/projects'
+    | '/projects/$id'
+    | '/api/public/health/denoise'
   id:
     | '__root__'
     | '/'
@@ -92,12 +115,14 @@ export interface FileRouteTypes {
     | '/_authenticated/app'
     | '/_authenticated/projects'
     | '/_authenticated/projects/$id'
+    | '/api/public/health/denoise'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiPublicHealthDenoiseRoute: typeof ApiPublicHealthDenoiseRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -151,6 +176,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProjectsIdRouteImport
       parentRoute: typeof AuthenticatedProjectsRoute
     }
+    '/api/public/health/denoise': {
+      id: '/api/public/health/denoise'
+      path: '/api/public/health/denoise'
+      fullPath: '/api/public/health/denoise'
+      preLoaderRoute: typeof ApiPublicHealthDenoiseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -186,6 +218,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiPublicHealthDenoiseRoute: ApiPublicHealthDenoiseRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

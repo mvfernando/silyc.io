@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { SiteHeader } from "@/components/site-header";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
+import { HowItWorks } from "@/components/how-it-works";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,6 +25,7 @@ function Index() {
       <main>
         <Hero t={t} />
         <FeaturesBento t={t} />
+        <HowItWorks />
         <Impact t={t} />
         <CtaStrip t={t} />
       </main>

@@ -153,6 +153,48 @@ export type Database = {
         }
         Relationships: []
       }
+      transcriptions: {
+        Row: {
+          chunks: Json
+          created_at: string
+          duration_sec: number | null
+          file_hash: string
+          id: string
+          language: string | null
+          model: string
+          prediction_id: string | null
+          text: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          chunks?: Json
+          created_at?: string
+          duration_sec?: number | null
+          file_hash: string
+          id?: string
+          language?: string | null
+          model?: string
+          prediction_id?: string | null
+          text?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          chunks?: Json
+          created_at?: string
+          duration_sec?: number | null
+          file_hash?: string
+          id?: string
+          language?: string | null
+          model?: string
+          prediction_id?: string | null
+          text?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

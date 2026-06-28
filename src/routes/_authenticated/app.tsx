@@ -160,6 +160,7 @@ function AppPage() {
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
+  const [detection, setDetection] = useState<{ silences: SilenceRange[]; duration: number } | null>(null);
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<UploadValidation | null>(null);
 
@@ -601,6 +602,7 @@ function AppPage() {
             },
             onDetectionComplete: ({ silences, totalDuration }) => {
               detectionCacheRef.current = { silences, duration: totalDuration };
+              setDetection({ silences, duration: totalDuration });
               appendLog({
                 level: "info",
                 step: "silences",
@@ -670,6 +672,7 @@ function AppPage() {
           cachedDuration: resume?.totalDuration,
           onDetectionComplete: ({ silences, totalDuration }) => {
             detectionCacheRef.current = { silences, duration: totalDuration };
+            setDetection({ silences, duration: totalDuration });
             appendLog({
               level: "info",
               step: "silences",

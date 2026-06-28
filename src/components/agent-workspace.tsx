@@ -451,6 +451,8 @@ function ReadyStage({
   originalFile,
   results,
   showRefine,
+  rating,
+  onRate,
   onAskRefine,
   onRefine,
   onManual,
@@ -467,6 +469,8 @@ function ReadyStage({
   originalFile: File | null;
   results: TaskResults | null;
   showRefine: boolean;
+  rating: FeedbackRating | null;
+  onRate: (r: FeedbackRating) => void;
   onAskRefine: () => void;
   onRefine: (choice: RefinementChoice) => void;
   onManual: () => void;

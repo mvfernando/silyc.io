@@ -39,7 +39,7 @@ export async function runCutTask(
         headPaddingSec: ctx.params.headPaddingSec,
         tailPaddingSec: ctx.params.tailPaddingSec,
         removeFillers: ctx.params.removeFillers,
-        language: ctx.transcribe.language ?? ctx.params ? input.facts.language ?? null : null,
+        language: ctx.transcribe.language ?? input.facts.language ?? null,
       },
     );
     const removedSec = silences.reduce((s, r) => s + (r.end - r.start), 0);

@@ -42,7 +42,7 @@ import {
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 import { mapError, type MappedError } from "@/lib/error-mapper";
 import { validateUpload, withBackoff, isTransientCloudError, type UploadValidation, type ValidationCheck } from "@/lib/validate-upload";
-import { LOCAL_RENDER_MAX_BYTES, MAX_UPLOAD_BYTES, formatFileSize } from "@/lib/upload-limits";
+import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 

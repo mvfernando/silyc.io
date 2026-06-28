@@ -963,6 +963,7 @@ function AppPage() {
                 max={-10}
                 step={1}
                 onChange={setThreshold}
+                hint={t.hint_threshold}
               />
               <SliderField
                 label={t.opt_min_pause}
@@ -973,6 +974,7 @@ function AppPage() {
                 step={0.05}
                 decimals={2}
                 onChange={setMinPause}
+                hint={t.hint_min_pause}
               />
               <SliderField
                 label={t.opt_padding}
@@ -983,8 +985,15 @@ function AppPage() {
                 step={0.05}
                 decimals={2}
                 onChange={setPadding}
+                hint={t.hint_padding}
               />
               </div>
+              <ImpactPreview
+                t={t}
+                detection={detection}
+                minPause={minPause}
+                padding={padding}
+              />
             </div>
           )}
         </section>

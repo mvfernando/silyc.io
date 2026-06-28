@@ -47,6 +47,8 @@ import {
 } from "@/lib/agent";
 import {
   saveFeedback,
+  listRecentFeedback,
+  type FeedbackHistoryEntry,
   type FeedbackRating,
   type FeedbackRefinement,
 } from "@/lib/agent/feedback";
@@ -624,6 +626,9 @@ function ReadyStage({
         )}
       </div>
 
+      {/* History — past reactions & refinement choices per run_id */}
+      <FeedbackHistorySection t={t} rating={rating} />
+
       {/* Refine — goals, not sliders */}
       <AnimatePresence>
         {showRefine && (
@@ -675,6 +680,90 @@ function ReceiptCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-border/60 bg-muted/10 p-5 text-center">
       <p className="font-display text-3xl text-foreground tracking-tight">{value}</p>
       <p className="mt-1 text-xs uppercase tracking-[0.15em] text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Feedback History — past reactions & refinement choices per run_id   */
+/* ------------------------------------------------------------------ */
+
+function FeedbackHistorySection({
+  t,
+  rating,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  rating: FeedbackRating | null;
+}) {
+  const [entries, setEntries] = useState<FeedbackHistoryEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  // Reload whenever the user records a new rating in this session.
+  useEffect(() => {
+    let alive = true;
+    void listRecentFeedback(8).then((rows) => {
+      if (alive) {
+        setEntries(rows);
+        setLoaded(true);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [rating]);
+
+  if (!loaded) return null;
+
+  const tr = t as unknown as Record<string, string>;
+  const ratingLabel = (r: FeedbackRating | null) =>
+    r === 3 ? "😍" : r === 2 ? "🙂" : r === 1 ? "😕" : "—";
+  const refinementLabel = (c: FeedbackRefinement | null) => {
+    if (!c) return "—";
+    return tr[`agent_history_refinement_${c}`] ?? c;
+  };
+  const formatWhen = (iso: string) => {
+    const d = new Date(iso);
+    const diff = Date.now() - d.getTime();
+    const m = Math.floor(diff / 60_000);
+    if (m < 1) return "now";
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
+  };
+
+  return (
+    <div className="mt-12 mx-auto max-w-2xl">
+      <p className="text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+        {t.agent_history_title}
+      </p>
+      {entries.length === 0 ? (
+        <p className="mt-3 text-center text-xs text-muted-foreground">
+          {t.agent_history_empty}
+        </p>
+      ) : (
+        <ul className="mt-4 divide-y divide-border/40 rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
+          {entries.map((e) => (
+            <li
+              key={e.runId}
+              className="flex items-center gap-3 px-4 py-2.5 text-sm"
+            >
+              <span className="text-lg leading-none" aria-hidden>
+                {ratingLabel(e.rating)}
+              </span>
+              <code className="text-[11px] text-muted-foreground/80 font-mono">
+                {e.runId.slice(0, 8)}
+              </code>
+              <span className="text-xs text-muted-foreground flex-1 truncate">
+                {refinementLabel(e.refinementChoice)}
+              </span>
+              <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                {formatWhen(e.updatedAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -340,6 +340,15 @@ const dict = {
     agent_reaction_meh: "Precisa melhorar",
     agent_reaction_thanks: "Obrigado pelo feedback",
     agent_reaction_meh_hint: "Experimente “Refinar com IA” para uma segunda passagem.",
+    // ---- History ----
+    agent_history_title: "Histórico de reações",
+    agent_history_empty: "Sem reações anteriores.",
+    agent_history_refinement_none: "Sem refinamento",
+    agent_history_refinement_more_dynamic: "Mais dinâmico",
+    agent_history_refinement_more_natural: "Mais natural",
+    agent_history_refinement_cut_more: "Cortar mais",
+    agent_history_refinement_manual: "Modo manual",
+    agent_history_no_rating: "Sem nota",
     // ---- Analyzer chips & decisions ----
     agent_analysis_title: "A IA identificou",
     agent_decisions_title: "Decisões da IA",
@@ -697,6 +706,15 @@ const dict = {
     agent_reaction_meh: "Needs improvement",
     agent_reaction_thanks: "Thanks for the feedback",
     agent_reaction_meh_hint: "Try “Refine with AI” for a second pass.",
+    // ---- History ----
+    agent_history_title: "Reaction history",
+    agent_history_empty: "No previous reactions.",
+    agent_history_refinement_none: "No refinement",
+    agent_history_refinement_more_dynamic: "More dynamic",
+    agent_history_refinement_more_natural: "More natural",
+    agent_history_refinement_cut_more: "Cut more",
+    agent_history_refinement_manual: "Manual mode",
+    agent_history_no_rating: "No rating",
     // ---- Analyzer chips & decisions ----
     agent_analysis_title: "AI identified",
     agent_decisions_title: "AI decisions",

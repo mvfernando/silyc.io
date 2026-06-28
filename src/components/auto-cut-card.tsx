@@ -12,6 +12,7 @@ import {
   type TranscriptionJobStatus,
 } from "@/lib/replicate.functions";
 import { chunksToSilences, estimateTranscriptionCostUsd } from "@/lib/auto-cut";
+import { extractAudioForTranscription } from "@/lib/ffmpeg-processor";
 import type { SilenceRange } from "@/components/silence-timeline";
 
 type Labels = {
@@ -20,6 +21,7 @@ type Labels = {
   cta: string;
   ctaBusy: string;
   cancel: string;
+  extract: string;
   upload: string;
   transcribe: string;
   analyzing: string;
@@ -38,7 +40,7 @@ function fmtMinSec(s: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-type Phase = "idle" | "upload" | "transcribe" | "analyze" | "done";
+type Phase = "idle" | "extract" | "upload" | "transcribe" | "analyze" | "done";
 
 export function AutoCutCard({
   file,
@@ -86,18 +88,31 @@ export function AutoCutCard({
       return;
     }
     cancelledRef.current = false;
+    setPhase("extract");
+    setProgress(2);
+    let audioBlob: Blob;
+    try {
+      audioBlob = await extractAudioForTranscription(file, (p) => {
+        setProgress(Math.max(2, Math.min(25, Math.round(p * 0.25))));
+      });
+      if (cancelledRef.current) throw new Error("cancelled");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`${labels.errPrefix}: ${msg}`);
+      setPhase("idle");
+      setProgress(0);
+      return;
+    }
     setPhase("upload");
-    setProgress(5);
+    setProgress(28);
     let signedUrl: string;
     try {
-      // Upload to a temp path under the user's folder so we can sign a URL Replicate can fetch.
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData.user?.id ?? "anon";
-      const ext = file.name.split(".").pop() || "mp4";
-      const path = `${uid}/auto/${crypto.randomUUID()}.${ext}`;
+      const path = `${uid}/auto/${crypto.randomUUID()}.mp3`;
       const { error: upErr } = await supabase.storage
         .from("videos")
-        .upload(path, file, { upsert: false, contentType: file.type });
+        .upload(path, audioBlob, { upsert: false, contentType: "audio/mpeg" });
       if (upErr) throw upErr;
       setProgress(30);
 
@@ -188,9 +203,11 @@ export function AutoCutCard({
   };
 
   const phaseLabel =
-    phase === "upload"
-      ? labels.upload
-      : phase === "transcribe"
+    phase === "extract"
+      ? labels.extract
+      : phase === "upload"
+        ? labels.upload
+        : phase === "transcribe"
         ? labels.transcribe
         : phase === "analyze"
           ? labels.analyzing

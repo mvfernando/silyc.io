@@ -406,3 +406,58 @@ export function formatDuration(seconds: number): string {
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
+
+/**
+ * Extract a small mono 16 kHz MP3 from the source file, suitable for
+ * sending to a speech-to-text API. Massively reduces upload size and
+ * processing time vs. re-uploading the original video.
+ */
+export async function extractAudioForTranscription(
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<Blob> {
+  const ffmpeg = await loadFFmpeg();
+  const inputName = `auto_in_${Date.now()}.${(file.name.split(".").pop() || "mp4").toLowerCase()}`;
+  const outputName = `auto_out_${Date.now()}.mp3`;
+
+  if (onProgress) {
+    const handler = ({ progress }: { progress: number }) =>
+      onProgress(Math.max(0, Math.min(1, progress)) * 100);
+    ffmpeg.on("progress", handler);
+  }
+
+  try {
+    await ffmpeg.writeFile(inputName, await fetchFile(file));
+    // -vn drop video, mono, 16 kHz, ~48 kbps mp3 — plenty for STT, tiny upload.
+    await ffmpeg.exec([
+      "-i",
+      inputName,
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-b:a",
+      "48k",
+      "-f",
+      "mp3",
+      outputName,
+    ]);
+    const data = await ffmpeg.readFile(outputName);
+    const buf =
+      typeof data === "string"
+        ? new TextEncoder().encode(data).buffer
+        : (data.buffer.slice(
+            data.byteOffset,
+            data.byteOffset + data.byteLength,
+          ) as ArrayBuffer);
+    return new Blob([buf], { type: "audio/mpeg" });
+  } finally {
+    try {
+      await ffmpeg.deleteFile(inputName);
+    } catch {}
+    try {
+      await ffmpeg.deleteFile(outputName);
+    } catch {}
+  }
+}

@@ -80,10 +80,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "SilentCut — Pós-produção automatizada" },
+      { title: "Silyc — Pós-produção automatizada" },
       { name: "description", content: "Remove silêncios, pausas e ruídos do seu vídeo em minutos. Edição limpa em um clique." },
-      { name: "author", content: "SilentCut" },
-      { property: "og:title", content: "SilentCut — Pós-produção automatizada" },
+      { name: "author", content: "Silyc" },
+      { property: "og:title", content: "Silyc — Pós-produção automatizada" },
       { property: "og:description", content: "Edição inteligente que remove silêncios e otimiza áudio em um clique." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

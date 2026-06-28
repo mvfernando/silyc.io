@@ -16,7 +16,7 @@ import { PreviewModal } from "@/components/preview-modal";
 import { SilenceTimeline } from "@/components/silence-timeline";
 
 export const Route = createFileRoute("/_authenticated/projects/$id")({
-  head: () => ({ meta: [{ title: "SilentCut — Projeto" }] }),
+  head: () => ({ meta: [{ title: "Silyc — Projeto" }] }),
   component: ProjectDetail,
 });
 

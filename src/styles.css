@@ -63,7 +63,7 @@
 
 :root {
   --radius: 0.625rem;
-  /* SilentCut dark cinematic theme */
+  /* Silyc dark cinematic theme */
   --background: oklch(0.14 0.004 280);
   --foreground: oklch(0.93 0 0);
   --card: oklch(0.18 0.004 280);

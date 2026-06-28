@@ -8,7 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { formatDuration } from "@/lib/ffmpeg-processor";
 
 export const Route = createFileRoute("/_authenticated/projects")({
-  head: () => ({ meta: [{ title: "SilentCut — Projetos" }] }),
+  head: () => ({ meta: [{ title: "Silyc — Projetos" }] }),
   component: ProjectsPage,
 });
 

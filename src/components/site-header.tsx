@@ -12,7 +12,7 @@ export function SiteHeader() {
           <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-[11px] font-bold text-primary-foreground">
             S
           </span>
-          <span>SilentCut</span>
+          <span>Silyc</span>
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           <Link

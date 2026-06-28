@@ -45,7 +45,15 @@ import { validateUpload, withBackoff, isTransientCloudError, type UploadValidati
 import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 import { PreviewModal } from "@/components/preview-modal";
 import { SilenceTimeline } from "@/components/silence-timeline";
-import { SILENCE_PRESETS, matchPreset, type SilencePreset } from "@/lib/silence-presets";
+import {
+  SILENCE_PRESETS,
+  matchPreset,
+  listCustomPresets,
+  saveCustomPreset,
+  deleteCustomPreset,
+  type SilencePreset,
+  type CustomPreset,
+} from "@/lib/silence-presets";
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
@@ -243,7 +251,11 @@ function AppPage() {
       const eo = (v as { export_options: Record<string, unknown> }).export_options ?? {};
       if (typeof s.threshold === "number") setThreshold(s.threshold);
       if (typeof s.minPause === "number") setMinPause(s.minPause);
+      if (typeof s.padding === "number") setPadding(s.padding);
       if (typeof s.removeSilence === "boolean") setRemoveSilence(s.removeSilence);
+      if (typeof s.enhanceAudio === "boolean") setEnhanceAudio(s.enhanceAudio);
+      if (typeof s.colorGrade === "boolean") setColorGrade(s.colorGrade);
+      if (typeof s.cloud === "boolean") setCloud(s.cloud);
       if (Object.keys(eo).length > 0) setExportOpts({ ...defaultExportOptions, ...(eo as ExportOptions) });
       toast.info(t.versions_reprocess);
     })();

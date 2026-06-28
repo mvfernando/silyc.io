@@ -183,7 +183,6 @@ function AppPage() {
 
   const onFile = async (f: File | null | undefined) => {
     if (!f) return;
-    if (f.size > MAX_UPLOAD_BYTES) return toast.error(t.err_file_size);
     setValidating(true);
     setValidation(null);
     try {

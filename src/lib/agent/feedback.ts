@@ -26,6 +26,7 @@ export interface FeedbackPayload {
   rating?: FeedbackRating | null;
   refinementChoice?: FeedbackRefinement | null;
   versionId?: string | null;
+  comment?: string | null;
 }
 
 export async function saveFeedback(payload: FeedbackPayload): Promise<void> {
@@ -40,6 +41,10 @@ export async function saveFeedback(payload: FeedbackPayload): Promise<void> {
   if (payload.rating != null) row.rating = payload.rating;
   if (payload.refinementChoice != null) row.refinement_choice = payload.refinementChoice;
   if (payload.versionId != null) row.version_id = payload.versionId;
+  if (payload.comment !== undefined) {
+    const trimmed = payload.comment == null ? null : payload.comment.trim().slice(0, 1000);
+    row.comment = trimmed && trimmed.length > 0 ? trimmed : null;
+  }
 
   const { error } = await supabase
     .from("pipeline_feedback" as never)
@@ -56,6 +61,7 @@ export interface FeedbackHistoryEntry {
   rating: FeedbackRating | null;
   refinementChoice: FeedbackRefinement | null;
   versionId: string | null;
+  comment: string | null;
   updatedAt: string;
 }
 
@@ -66,7 +72,7 @@ export async function listRecentFeedback(limit = 10): Promise<FeedbackHistoryEnt
 
   const { data, error } = await supabase
     .from("pipeline_feedback" as never)
-    .select("run_id, rating, refinement_choice, version_id, updated_at")
+    .select("run_id, rating, refinement_choice, version_id, comment, updated_at")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .limit(limit);
@@ -81,6 +87,7 @@ export async function listRecentFeedback(limit = 10): Promise<FeedbackHistoryEnt
     rating: (row.rating ?? null) as FeedbackRating | null,
     refinementChoice: (row.refinement_choice ?? null) as FeedbackRefinement | null,
     versionId: (row.version_id ?? null) as string | null,
+    comment: (row.comment ?? null) as string | null,
     updatedAt: String(row.updated_at),
   }));
 }

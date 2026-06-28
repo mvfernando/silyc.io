@@ -109,6 +109,8 @@ function AppPage() {
 
   const [phase, setPhase] = useState<ProgressEvent["phase"] | "upload" | "cloud" | "idle">("idle");
   const [progress, setProgress] = useState(0);
+  const phaseStartRef = useRef<number>(0);
+  const [eta, setEta] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
   const [actualCredits, setActualCredits] = useState<number | null>(null);
@@ -146,6 +148,8 @@ function AppPage() {
       }
       if (next !== prev) {
         stepStartRef.current[next as string] = Date.now();
+        phaseStartRef.current = Date.now();
+        setEta(null);
         appendLog({
           level: "info",
           step: (PHASE_TO_STEP[next as ProgressEvent["phase"]] ?? "export") as StepKey,

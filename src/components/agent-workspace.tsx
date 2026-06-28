@@ -1,0 +1,586 @@
+/**
+ * AgentWorkspace — the user-facing 3-state surface for the
+ * PostProductionAgent.
+ *
+ *   Upload  →  Working  →  Ready
+ *
+ * The screen never asks technical questions. Codec, bitrate, cloud-vs-
+ * local, refinement parameters — all of that lives inside the agent.
+ * What the user sees is:
+ *
+ *   1. Upload: a drop target with a one-line promise.
+ *   2. Working: a humanized progress story ("Understanding the video…")
+ *      with a single global bar, a soft cancel, and a tiny "details"
+ *      affordance for power users.
+ *   3. Ready: a value-receipt (what was removed, time saved, analysis
+ *      chips), a primary download/preview, a "Refine with AI" path,
+ *      and an escape hatch to the manual workspace.
+ *
+ * The legacy advanced workspace is still reachable from `/app?legacy=1`
+ * so nothing is lost while the new flow stabilises.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { motion, AnimatePresence } from "motion/react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Spinner } from "@/components/spinner";
+import { supabase } from "@/integrations/supabase/client";
+import { validateUpload } from "@/lib/validate-upload";
+import { formatFileSize, MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
+import { formatDuration } from "@/lib/ffmpeg-processor";
+import {
+  runAgent,
+  weightedGlobalProgress,
+  type AgentController,
+  type AgentEvent,
+  type AnalysisFacts,
+  type RefinementChoice,
+  type TaskId,
+  type TaskPlan,
+  type TaskResults,
+  type ValueReceipt,
+} from "@/lib/agent";
+
+type Stage = "upload" | "working" | "ready" | "failed";
+
+type PerTask = Partial<Record<TaskId, number>>;
+
+const HUMAN_LABELS: Record<TaskId, string> = {
+  transcribe: "A compreender o vídeo",
+  cut: "A escolher os cortes",
+  audio: "A polir o áudio",
+  render: "A montar a versão final",
+};
+
+const REFINEMENT_OPTIONS: Array<{ id: Exclude<RefinementChoice, "none" | "manual">; label: string; hint: string }> = [
+  { id: "more_dynamic", label: "Mais dinâmico", hint: "Corta pausas curtas e remove fillers" },
+  { id: "more_natural", label: "Mais natural", hint: "Mantém respirações e fillers leves" },
+  { id: "cut_more", label: "Cortar ainda mais", hint: "Apertado, sem respiros" },
+];
+
+export function AgentWorkspace() {
+  const navigate = useNavigate();
+
+  const [stage, setStage] = useState<Stage>("upload");
+  const [file, setFile] = useState<File | null>(null);
+  const [plan, setPlan] = useState<TaskPlan | null>(null);
+  const [perTask, setPerTask] = useState<PerTask>({});
+  const [done, setDone] = useState<Set<TaskId>>(new Set());
+  const [currentTask, setCurrentTask] = useState<TaskId | null>(null);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const [showRefine, setShowRefine] = useState(false);
+  const [results, setResults] = useState<TaskResults | null>(null);
+  const [receipt, setReceipt] = useState<ValueReceipt | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const controllerRef = useRef<AgentController | null>(null);
+  const localBlobRef = useRef<string | null>(null);
+
+  useEffect(() => () => {
+    if (localBlobRef.current) URL.revokeObjectURL(localBlobRef.current);
+    controllerRef.current?.cancel();
+  }, []);
+
+  const startAgent = useCallback(
+    async (sourceFile: File, refinement: RefinementChoice = "none") => {
+      setStage("working");
+      setError(null);
+      setPerTask({});
+      setDone(new Set());
+      setLogs([]);
+      setResults(null);
+      setReceipt(null);
+      setCurrentTask(null);
+
+      const validation = await validateUpload(sourceFile).catch(() => null);
+      const { data: userData } = await supabase.auth.getUser();
+
+      const facts: AnalysisFacts = {
+        fileName: sourceFile.name,
+        fileSizeBytes: sourceFile.size,
+        durationSec: validation?.durationSec ?? 0,
+        hasAudio: validation ? validation.hasAudio !== false : true,
+        language: null,
+      };
+
+      const ctrl = runAgent(
+        { file: sourceFile, facts, refinement, userId: userData?.user?.id ?? null },
+        {
+          onEvent: (e: AgentEvent) => {
+            if (e.type === "plan") setPlan(e.plan);
+            else if (e.type === "phase") setCurrentTask(e.task);
+            else if (e.type === "progress") {
+              setPerTask((p) => ({ ...p, [e.task]: e.ratio }));
+            } else if (e.type === "task_done") {
+              setDone((d) => new Set(d).add(e.task));
+            } else if (e.type === "log") {
+              setLogs((l) => [...l.slice(-200), e.message]);
+            }
+          },
+        },
+      );
+      controllerRef.current = ctrl;
+
+      try {
+        const { results: r, receipt: rec } = await ctrl.promise;
+        setResults(r);
+        setReceipt(rec);
+        if (r.render?.outputBlob) {
+          if (localBlobRef.current) URL.revokeObjectURL(localBlobRef.current);
+          localBlobRef.current = URL.createObjectURL(r.render.outputBlob);
+        }
+        setStage("ready");
+        setShowRefine(false);
+      } catch (err) {
+        if (err instanceof Error && err.message === "cancelled") {
+          setStage("upload");
+          return;
+        }
+        setError(err instanceof Error ? err.message : String(err));
+        setStage("failed");
+      }
+    },
+    [],
+  );
+
+  const handleFile = useCallback(
+    async (f: File) => {
+      if (f.size > MAX_UPLOAD_BYTES) {
+        toast.error(`Ficheiro acima do limite (${formatFileSize(MAX_UPLOAD_BYTES)}).`);
+        return;
+      }
+      setFile(f);
+      await startAgent(f, "none");
+    },
+    [startAgent],
+  );
+
+  const globalProgress = useMemo(() => {
+    if (!plan) return 0;
+    return weightedGlobalProgress(plan, perTask, done);
+  }, [plan, perTask, done]);
+
+  const outputUrl = useMemo(() => {
+    if (results?.render?.outputUrl) return results.render.outputUrl;
+    return localBlobRef.current;
+  }, [results]);
+
+  return (
+    <div className="relative">
+      <AnimatePresence mode="wait">
+        {stage === "upload" && (
+          <UploadStage key="upload" onFile={handleFile} onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })} />
+        )}
+        {stage === "working" && (
+          <WorkingStage
+            key="working"
+            file={file}
+            currentTask={currentTask}
+            plan={plan}
+            progress={globalProgress}
+            done={done}
+            logs={logs}
+            showLogs={showLogs}
+            onToggleLogs={() => setShowLogs((s) => !s)}
+            onCancel={() => controllerRef.current?.cancel()}
+          />
+        )}
+        {stage === "ready" && receipt && (
+          <ReadyStage
+            key="ready"
+            receipt={receipt}
+            outputUrl={outputUrl}
+            originalFile={file}
+            results={results}
+            showRefine={showRefine}
+            onAskRefine={() => setShowRefine(true)}
+            onRefine={(choice) => file && startAgent(file, choice)}
+            onManual={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
+            onNew={() => {
+              setStage("upload");
+              setFile(null);
+              setResults(null);
+              setReceipt(null);
+            }}
+          />
+        )}
+        {stage === "failed" && (
+          <FailedStage
+            key="failed"
+            error={error}
+            onRetry={() => file && startAgent(file, "none")}
+            onReset={() => {
+              setStage("upload");
+              setFile(null);
+            }}
+            onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Stage 1 — Upload                                                    */
+/* ------------------------------------------------------------------ */
+
+function UploadStage({
+  onFile,
+  onLegacy,
+}: {
+  onFile: (f: File) => void;
+  onLegacy: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.25 }}
+      className="mx-auto max-w-3xl px-6 py-16"
+    >
+      <div className="text-center mb-10">
+        <h1 className="font-display text-4xl md:text-5xl tracking-tight text-foreground">
+          Upload. Volte quando estiver pronto.
+        </h1>
+        <p className="mt-4 text-muted-foreground text-base">
+          A Silyc trata do resto. Cortes, fillers, áudio e exportação — sem configurações.
+        </p>
+      </div>
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDrag(true);
+        }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) onFile(f);
+        }}
+        onClick={() => inputRef.current?.click()}
+        className={`rounded-2xl border-2 border-dashed transition-colors cursor-pointer px-10 py-20 text-center ${
+          drag ? "border-primary bg-primary/5" : "border-border/60 bg-muted/20 hover:bg-muted/30"
+        }`}
+      >
+        <p className="text-lg text-foreground/90 font-medium">
+          Arraste o seu vídeo aqui
+        </p>
+        <p className="text-sm text-muted-foreground mt-2">
+          ou clique para escolher um ficheiro · até {formatFileSize(MAX_UPLOAD_BYTES)}
+        </p>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="video/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onFile(f);
+          }}
+        />
+      </div>
+
+      <div className="mt-6 text-center">
+        <button
+          onClick={onLegacy}
+          className="text-xs text-muted-foreground/70 hover:text-muted-foreground underline-offset-4 hover:underline"
+        >
+          Prefere afinar manualmente? Abrir workspace avançado
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Stage 2 — Working                                                   */
+/* ------------------------------------------------------------------ */
+
+function WorkingStage({
+  file,
+  currentTask,
+  plan,
+  progress,
+  done,
+  logs,
+  showLogs,
+  onToggleLogs,
+  onCancel,
+}: {
+  file: File | null;
+  currentTask: TaskId | null;
+  plan: TaskPlan | null;
+  progress: number;
+  done: Set<TaskId>;
+  logs: string[];
+  showLogs: boolean;
+  onToggleLogs: () => void;
+  onCancel: () => void;
+}) {
+  const label = currentTask ? HUMAN_LABELS[currentTask] : "A preparar o agente";
+  const pct = Math.round(progress * 100);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+      className="mx-auto max-w-2xl px-6 py-20"
+    >
+      <div className="text-center">
+        <div className="inline-flex items-center gap-3 text-sm text-muted-foreground">
+          <Spinner />
+          <span>{file?.name}</span>
+        </div>
+        <h2 className="mt-6 font-display text-3xl md:text-4xl tracking-tight text-foreground">
+          {label}…
+        </h2>
+        <p className="mt-3 text-muted-foreground">
+          Pode fechar esta página — vamos avisar quando estiver pronto.
+        </p>
+      </div>
+
+      <div className="mt-12">
+        <Progress value={pct} className="h-1.5" />
+        <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+          <span>{pct}%</span>
+          <span>
+            {done.size}/{plan?.steps.length ?? 0} etapas
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-10 flex items-center justify-center gap-4">
+        <Button variant="ghost" size="sm" onClick={onToggleLogs}>
+          {showLogs ? "Esconder detalhes" : "Ver detalhes"}
+        </Button>
+        <span className="h-4 w-px bg-border" />
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancelar
+        </Button>
+      </div>
+
+      {showLogs && (
+        <div className="mt-8 rounded-lg border border-border/60 bg-muted/20 p-4 max-h-64 overflow-auto font-mono text-[11px] text-muted-foreground leading-relaxed">
+          {logs.length === 0 ? <p>Sem eventos ainda.</p> : logs.map((l, i) => <div key={i}>{l}</div>)}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Stage 3 — Ready                                                     */
+/* ------------------------------------------------------------------ */
+
+function ReadyStage({
+  receipt,
+  outputUrl,
+  originalFile,
+  results,
+  showRefine,
+  onAskRefine,
+  onRefine,
+  onManual,
+  onNew,
+}: {
+  receipt: ValueReceipt;
+  outputUrl: string | null;
+  originalFile: File | null;
+  results: TaskResults | null;
+  showRefine: boolean;
+  onAskRefine: () => void;
+  onRefine: (choice: RefinementChoice) => void;
+  onManual: () => void;
+  onNew: () => void;
+}) {
+  const savedH = Math.floor(receipt.manualEditingMinutesSaved / 60);
+  const savedM = receipt.manualEditingMinutesSaved % 60;
+  const savedLabel =
+    savedH > 0 ? `${savedH}h ${savedM.toString().padStart(2, "0")}` : `${savedM} min`;
+
+  const originalUrl = useMemo(
+    () => (originalFile ? URL.createObjectURL(originalFile) : null),
+    [originalFile],
+  );
+  useEffect(() => () => {
+    if (originalUrl) URL.revokeObjectURL(originalUrl);
+  }, [originalUrl]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="mx-auto max-w-4xl px-6 py-14"
+    >
+      <div className="text-center">
+        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Pronto</p>
+        <h2 className="mt-3 font-display text-4xl md:text-5xl tracking-tight text-foreground">
+          Poupou cerca de {savedLabel} de edição manual
+        </h2>
+      </div>
+
+      {/* Receipt — what we did */}
+      <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <ReceiptCard label="Silêncios removidos" value={receipt.silencesRemoved.toString()} />
+        <ReceiptCard label="Fillers removidos" value={receipt.fillersRemoved.toString()} />
+        <ReceiptCard
+          label="Tempo cortado"
+          value={receipt.removedSec > 0 ? formatDuration(receipt.removedSec) : "—"}
+        />
+      </div>
+
+      {/* Analysis chips — only confident ones */}
+      {receipt.analysis.length > 0 && (
+        <div className="mt-6 flex flex-wrap gap-2 justify-center">
+          {receipt.analysis.map((chip) => (
+            <span
+              key={`${chip.key}-${chip.value}`}
+              className="rounded-full border border-border/60 bg-muted/30 px-3 py-1 text-xs text-muted-foreground"
+            >
+              {chip.value}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Preview */}
+      {outputUrl && (
+        <div className="mt-10 rounded-2xl border border-border/60 overflow-hidden bg-black">
+          <video src={outputUrl} controls className="w-full max-h-[60vh]" />
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        {outputUrl && (
+          <a
+            href={outputUrl}
+            download={originalFile ? `silyc-${originalFile.name}` : "silyc-output.mp4"}
+          >
+            <Button size="lg">Descarregar</Button>
+          </a>
+        )}
+        <Button variant="outline" size="lg" onClick={onAskRefine}>
+          Refinar com IA
+        </Button>
+        <Button variant="ghost" size="lg" onClick={onNew}>
+          Novo vídeo
+        </Button>
+      </div>
+
+      {/* Refine — goals, not sliders */}
+      <AnimatePresence>
+        {showRefine && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-10 overflow-hidden"
+          >
+            <div className="rounded-2xl border border-border/60 bg-muted/10 p-6">
+              <p className="text-sm font-medium text-foreground">Como quer melhorar?</p>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2">
+                {REFINEMENT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => onRefine(opt.id)}
+                    className="text-left rounded-xl border border-border/60 bg-background/40 hover:bg-background/70 transition-colors p-4"
+                  >
+                    <p className="text-sm font-medium text-foreground">{opt.label}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{opt.hint}</p>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 text-center">
+                <button
+                  onClick={onManual}
+                  className="text-xs text-muted-foreground/70 hover:text-muted-foreground underline-offset-4 hover:underline"
+                >
+                  Ajustar manualmente
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Debug — silent unless requested */}
+      {results?.render?.mode && (
+        <p className="mt-10 text-center text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60">
+          render · {results.render.mode}
+        </p>
+      )}
+    </motion.div>
+  );
+}
+
+function ReceiptCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/10 p-5 text-center">
+      <p className="font-display text-3xl text-foreground tracking-tight">{value}</p>
+      <p className="mt-1 text-xs uppercase tracking-[0.15em] text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Stage 4 — Failed                                                    */
+/* ------------------------------------------------------------------ */
+
+function FailedStage({
+  error,
+  onRetry,
+  onReset,
+  onLegacy,
+}: {
+  error: string | null;
+  onRetry: () => void;
+  onReset: () => void;
+  onLegacy: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="mx-auto max-w-xl px-6 py-20 text-center"
+    >
+      <h2 className="font-display text-3xl tracking-tight text-foreground">
+        Algo correu mal
+      </h2>
+      <p className="mt-3 text-muted-foreground text-sm">
+        {error ?? "Erro desconhecido durante o processamento."}
+      </p>
+      <div className="mt-8 flex items-center justify-center gap-3">
+        <Button onClick={onRetry}>Tentar novamente</Button>
+        <Button variant="outline" onClick={onReset}>
+          Outro vídeo
+        </Button>
+      </div>
+      <div className="mt-6">
+        <button
+          onClick={onLegacy}
+          className="text-xs text-muted-foreground/70 hover:text-muted-foreground underline-offset-4 hover:underline"
+        >
+          Abrir workspace avançado
+        </button>
+      </div>
+    </motion.div>
+  );
+}

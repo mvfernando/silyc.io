@@ -760,6 +760,7 @@ function PublicStatusPanel({
   fileName,
   onDownloadLogs,
   onDownloadReport,
+  onPreview,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   completedAt: string;
@@ -767,6 +768,7 @@ function PublicStatusPanel({
   fileName: string;
   onDownloadLogs: () => void;
   onDownloadReport: () => void;
+  onPreview: () => void;
 }) {
   return (
     <section className="mt-8 rounded-xl border border-primary/30 bg-primary/5 p-5">
@@ -780,6 +782,9 @@ function PublicStatusPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={onPreview}>
+            {t.preview_open}
+          </Button>
           <Button asChild size="sm">
             <a href={downloadUrl} download={fileName}>{t.status_download_result}</a>
           </Button>

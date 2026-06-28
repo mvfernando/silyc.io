@@ -139,6 +139,7 @@ function AppPage() {
   const [cloud, setCloud] = useState(false);
   const [threshold, setThreshold] = useState(-30);
   const [minPause, setMinPause] = useState(0.5);
+  const [padding, setPadding] = useState(0.25);
   const [exportOpts, setExportOpts] = useState<ExportOptions>(defaultExportOptions);
 
   const [phase, setPhase] = useState<ProgressEvent["phase"] | "upload" | "cloud" | "idle">("idle");
@@ -591,6 +592,7 @@ function AppPage() {
           const det = await detectSilencesOnly(file, {
             thresholdDb: threshold,
             minPauseSec: minPause,
+            paddingSec: padding,
             exportOptions: exportOpts,
             controller,
             onProgress: (e) => {
@@ -640,6 +642,7 @@ function AppPage() {
           const local = await processVideoRemoveSilence(file, {
             thresholdDb: threshold,
             minPauseSec: minPause,
+            paddingSec: padding,
             exportOptions: exportOpts,
             controller,
             cachedSilences: silences,
@@ -660,6 +663,7 @@ function AppPage() {
         const result = await processVideoRemoveSilence(file, {
           thresholdDb: threshold,
           minPauseSec: minPause,
+            paddingSec: padding,
           exportOptions: exportOpts,
           controller,
           cachedSilences: resume?.silences,
@@ -949,6 +953,16 @@ function AppPage() {
                 step={0.05}
                 decimals={2}
                 onChange={setMinPause}
+              />
+              <SliderField
+                label={t.opt_padding}
+                value={padding}
+                unit="s"
+                min={0}
+                max={1}
+                step={0.05}
+                decimals={2}
+                onChange={setPadding}
               />
             </div>
           )}

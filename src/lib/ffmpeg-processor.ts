@@ -325,7 +325,11 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
 
   const filter =
     `[0:v]select='${videoExpr}',setpts=N/FRAME_RATE/TB${scaleChain}${fpsChain}[v];` +
-    `[0:a]aselect='${audioExpr}',asetpts=N/SR/TB,loudnorm=I=-16:TP=-1.5:LRA=11[a]`;
+    // afade on the concatenated stream removes the click at the very start/end
+    // of the export. Per-segment crossfade isn't applied here — increasing
+    // paddingSec is the recommended way to avoid clipping word boundaries.
+    `[0:a]aselect='${audioExpr}',asetpts=N/SR/TB,` +
+    `afade=t=in:st=0:d=0.02,loudnorm=I=-16:TP=-1.5:LRA=11[a]`;
 
   onProgress?.({ phase: "audio", progress: 1 });
 

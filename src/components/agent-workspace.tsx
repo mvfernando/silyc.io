@@ -587,6 +587,43 @@ function ReadyStage({
         </Button>
       </div>
 
+      {/* Reaction row — 3 honest options, no thumbs-down */}
+      <div className="mt-10 flex flex-col items-center gap-3">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+          {t.agent_reaction_title}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {([
+            { r: 3 as const, label: t.agent_reaction_great, emoji: "😍" },
+            { r: 2 as const, label: t.agent_reaction_good, emoji: "🙂" },
+            { r: 1 as const, label: t.agent_reaction_meh, emoji: "😕" },
+          ]).map(({ r, label, emoji }) => {
+            const active = rating === r;
+            return (
+              <button
+                key={r}
+                type="button"
+                onClick={() => onRate(r)}
+                aria-pressed={active}
+                className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
+                  active
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:bg-background/70"
+                }`}
+              >
+                <span className="mr-1.5" aria-hidden>{emoji}</span>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {rating != null && (
+          <p className="text-xs text-muted-foreground">
+            {rating === 1 ? t.agent_reaction_meh_hint : t.agent_reaction_thanks}
+          </p>
+        )}
+      </div>
+
       {/* Refine — goals, not sliders */}
       <AnimatePresence>
         {showRefine && (

@@ -45,7 +45,15 @@ import { validateUpload, withBackoff, isTransientCloudError, type UploadValidati
 import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 import { PreviewModal } from "@/components/preview-modal";
 import { SilenceTimeline } from "@/components/silence-timeline";
-import { SILENCE_PRESETS, matchPreset, type SilencePreset } from "@/lib/silence-presets";
+import {
+  SILENCE_PRESETS,
+  matchPreset,
+  listCustomPresets,
+  saveCustomPreset,
+  deleteCustomPreset,
+  type SilencePreset,
+  type CustomPreset,
+} from "@/lib/silence-presets";
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
@@ -243,7 +251,11 @@ function AppPage() {
       const eo = (v as { export_options: Record<string, unknown> }).export_options ?? {};
       if (typeof s.threshold === "number") setThreshold(s.threshold);
       if (typeof s.minPause === "number") setMinPause(s.minPause);
+      if (typeof s.padding === "number") setPadding(s.padding);
       if (typeof s.removeSilence === "boolean") setRemoveSilence(s.removeSilence);
+      if (typeof s.enhanceAudio === "boolean") setEnhanceAudio(s.enhanceAudio);
+      if (typeof s.colorGrade === "boolean") setColorGrade(s.colorGrade);
+      if (typeof s.cloud === "boolean") setCloud(s.cloud);
       if (Object.keys(eo).length > 0) setExportOpts({ ...defaultExportOptions, ...(eo as ExportOptions) });
       toast.info(t.versions_reprocess);
     })();
@@ -260,7 +272,10 @@ function AppPage() {
     if (!targetResume) return;
     setThreshold(targetResume.settings.threshold);
     setMinPause(targetResume.settings.minPause);
+    if (typeof targetResume.settings.padding === "number") setPadding(targetResume.settings.padding);
     setRemoveSilence(targetResume.settings.removeSilence);
+    if (typeof targetResume.settings.enhanceAudio === "boolean") setEnhanceAudio(targetResume.settings.enhanceAudio);
+    if (typeof targetResume.settings.colorGrade === "boolean") setColorGrade(targetResume.settings.colorGrade);
     setExportOpts({ ...defaultExportOptions, ...targetResume.exportOpts });
     setName(targetResume.projectName);
     setCloud(!!targetResume.cloud);
@@ -363,7 +378,7 @@ function AppPage() {
       fingerprint: fingerprintFile(f),
       fileName: f.name,
       fileSize: f.size,
-      settings: { threshold, minPause, removeSilence },
+      settings: { threshold, minPause, padding, removeSilence, enhanceAudio, colorGrade, cloud },
       exportOpts,
       lastPhase,
       completedSteps: lastPhaseToCompletedSteps(lastPhase),
@@ -549,7 +564,7 @@ function AppPage() {
           user_id: userId,
           name: name || file.name,
           status: "processing",
-          settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, exportOpts, cloud: effectiveCloud },
+          settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, padding, exportOpts, cloud: effectiveCloud },
         })
         .select()
         .single();
@@ -751,7 +766,7 @@ function AppPage() {
         project_id: projectId,
         user_id: userId,
         label: versionLabel,
-        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, cloud: effectiveCloud },
+        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, padding, cloud: effectiveCloud },
         export_options: exportOpts as unknown as Record<string, unknown>,
         output_path: outPath,
         stats: { ...stats, logs: logs.slice(-200), attempts: attemptsRef.current },
@@ -963,6 +978,26 @@ function AppPage() {
                   setThreshold(p.threshold);
                   setMinPause(p.minPause);
                   setPadding(p.padding);
+                }}
+                snapshot={{
+                  threshold,
+                  minPause,
+                  padding,
+                  removeSilence,
+                  enhanceAudio,
+                  colorGrade,
+                  cloud,
+                  exportOpts: exportOpts as unknown as Record<string, unknown>,
+                }}
+                onApplyCustom={(cp) => {
+                  setThreshold(cp.threshold);
+                  setMinPause(cp.minPause);
+                  setPadding(cp.padding);
+                  setRemoveSilence(cp.removeSilence);
+                  setEnhanceAudio(cp.enhanceAudio);
+                  setColorGrade(cp.colorGrade);
+                  setCloud(cp.cloud);
+                  if (cp.exportOpts) setExportOpts({ ...defaultExportOptions, ...(cp.exportOpts as ExportOptions) });
                 }}
               />
               <div className="grid gap-6 md:grid-cols-2">
@@ -1587,10 +1622,23 @@ function PresetPicker({
   t,
   current,
   onPick,
+  snapshot,
+  onApplyCustom,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   current: ReturnType<typeof matchPreset>;
   onPick: (p: SilencePreset) => void;
+  snapshot: {
+    threshold: number;
+    minPause: number;
+    padding: number;
+    removeSilence: boolean;
+    enhanceAudio: boolean;
+    colorGrade: boolean;
+    cloud: boolean;
+    exportOpts: Record<string, unknown>;
+  };
+  onApplyCustom: (cp: CustomPreset) => void;
 }) {
   const meta: Record<SilencePreset["id"], { label: string; desc: string }> = {
     interview: { label: t.preset_interview, desc: t.preset_interview_d },
@@ -1598,6 +1646,19 @@ function PresetPicker({
     lowvoice: { label: t.preset_lowvoice, desc: t.preset_lowvoice_d },
     aggressive: { label: t.preset_aggressive, desc: t.preset_aggressive_d },
     screencast: { label: t.preset_screencast, desc: t.preset_screencast_d },
+  };
+  const [customs, setCustoms] = useState<CustomPreset[]>(() => listCustomPresets());
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState("");
+  const refresh = () => setCustoms(listCustomPresets());
+  const handleSave = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    saveCustomPreset({ name: trimmed, ...snapshot });
+    setName("");
+    setSaving(false);
+    refresh();
+    toast.success(t.preset_save_done);
   };
   return (
     <div className="space-y-2">
@@ -1636,6 +1697,81 @@ function PresetPicker({
             </button>
           );
         })}
+      </div>
+
+      <div className="space-y-2 pt-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm">{t.preset_my}</Label>
+          {!saving && (
+            <button
+              type="button"
+              onClick={() => setSaving(true)}
+              className="text-[11px] font-medium text-primary hover:underline"
+            >
+              {t.preset_save}
+            </button>
+          )}
+        </div>
+        {saving && (
+          <div className="flex gap-2">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t.preset_save_placeholder}
+              className="h-9 text-sm"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSave();
+                if (e.key === "Escape") {
+                  setSaving(false);
+                  setName("");
+                }
+              }}
+            />
+            <Button type="button" size="sm" onClick={handleSave} disabled={!name.trim()}>
+              {t.preset_save_confirm}
+            </Button>
+          </div>
+        )}
+        {customs.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">{t.preset_empty}</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {customs.map((cp) => (
+              <div
+                key={cp.id}
+                className="group flex items-start justify-between gap-2 rounded-lg border border-border/70 bg-card/30 p-3 transition-colors hover:border-border hover:bg-card/60"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    onApplyCustom(cp);
+                    toast.success(t.preset_applied);
+                  }}
+                  className="flex-1 text-left"
+                >
+                  <div className="text-sm font-medium text-foreground/90">{cp.name}</div>
+                  <div className="mt-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {cp.threshold}dB · {cp.minPause.toFixed(2)}s · {cp.padding.toFixed(2)}s
+                    {cp.cloud ? " · cloud" : ""}
+                    {cp.enhanceAudio ? " · AI" : ""}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteCustomPreset(cp.id);
+                    refresh();
+                  }}
+                  className="text-[10px] uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                  aria-label={t.preset_delete}
+                >
+                  {t.preset_delete}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

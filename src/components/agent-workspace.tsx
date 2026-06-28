@@ -47,6 +47,8 @@ import {
 } from "@/lib/agent";
 import {
   saveFeedback,
+  listRecentFeedback,
+  type FeedbackHistoryEntry,
   type FeedbackRating,
   type FeedbackRefinement,
 } from "@/lib/agent/feedback";

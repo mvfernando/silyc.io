@@ -69,6 +69,8 @@ export type Database = {
       }
       pipeline_feedback: {
         Row: {
+          audio_profile_used: string | null
+          audio_snr_db: number | null
           comment: string | null
           created_at: string
           format: string | null
@@ -81,6 +83,8 @@ export type Database = {
           version_id: string | null
         }
         Insert: {
+          audio_profile_used?: string | null
+          audio_snr_db?: number | null
           comment?: string | null
           created_at?: string
           format?: string | null
@@ -93,6 +97,8 @@ export type Database = {
           version_id?: string | null
         }
         Update: {
+          audio_profile_used?: string | null
+          audio_snr_db?: number | null
           comment?: string | null
           created_at?: string
           format?: string | null

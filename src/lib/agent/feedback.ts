@@ -35,6 +35,8 @@ export interface FeedbackPayload {
   versionId?: string | null;
   comment?: string | null;
   format?: FeedbackFormat | null;
+  audioProfileUsed?: "ffmpeg-light" | "ffmpeg-aggressive" | "cloud-denoise" | "skip" | null;
+  audioSnrDb?: number | null;
 }
 
 export async function saveFeedback(payload: FeedbackPayload): Promise<void> {
@@ -50,6 +52,8 @@ export async function saveFeedback(payload: FeedbackPayload): Promise<void> {
   if (payload.refinementChoice != null) row.refinement_choice = payload.refinementChoice;
   if (payload.versionId != null) row.version_id = payload.versionId;
   if (payload.format != null) row.format = payload.format;
+  if (payload.audioProfileUsed != null) row.audio_profile_used = payload.audioProfileUsed;
+  if (payload.audioSnrDb != null && isFinite(payload.audioSnrDb)) row.audio_snr_db = payload.audioSnrDb;
   if (payload.comment !== undefined) {
     const trimmed = payload.comment == null ? null : payload.comment.trim().slice(0, 1000);
     row.comment = trimmed && trimmed.length > 0 ? trimmed : null;

@@ -61,6 +61,10 @@ export type TaskParams = {
   };
   audio: {
     skip: boolean;
+    /** Cleanup pipeline to apply. */
+    profile?: "ffmpeg-light" | "ffmpeg-aggressive" | "cloud-denoise" | "skip";
+    /** User tier — gates cloud-denoise. */
+    tier?: "standard" | "pro";
   };
   render: {
     /** "cloud" uses Shotstack; "local" uses FFmpeg.wasm in-browser. */
@@ -96,6 +100,22 @@ export type TaskResults = {
     /** Signed URL of the enhanced audio track. */
     enhancedAudioUrl: string | null;
     skipped: boolean;
+    /** Profile actually executed (may differ from planned after fallbacks). */
+    profileUsed?: "ffmpeg-light" | "ffmpeg-aggressive" | "cloud-denoise" | "skip";
+    /** SNR before processing, in dB (positive = speech louder than noise). */
+    snrBeforeDb?: number;
+    /** SNR after processing, in dB. */
+    snrAfterDb?: number;
+    /** Integrated loudness before, in LUFS (negative). */
+    lufsBeforeDb?: number;
+    /** Integrated loudness after, in LUFS. */
+    lufsAfterDb?: number;
+    /** Noise floor before, in dB. */
+    noiseFloorBeforeDb?: number;
+    /** True when a planned cloud denoise was downgraded to local FFmpeg. */
+    downgradedFromPro?: boolean;
+    /** Ordered list of attempts run (for receipt + logs). */
+    fallbacks?: string[];
   };
   render?: {
     /** Local Blob when mode=local; otherwise undefined. */

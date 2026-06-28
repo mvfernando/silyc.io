@@ -73,11 +73,20 @@ export function decide(
   if (refinement !== "none") reasoning.push(`cut tuned for refinement=${refinement}`);
 
   // ---- audio enhancement --------------------------------------------------
-  // Skip Resemble when there's no audio at all, or when the clip is too
-  // short for the round-trip to be worth the credit spend.
-  const audioSkip = !facts.hasAudio || (facts.durationSec > 0 && facts.durationSec < 15);
-  const audio: TaskParams["audio"] = { skip: audioSkip };
-  if (audioSkip) reasoning.push("audio enhancement skipped: short clip or no audio");
+  // The AudioTask runs AFTER render and masters the final video's audio.
+  // The DecisionEngine picks the *initial* profile from facts alone; the
+  // task itself refines it once it has measured SNR on the source.
+  // Skip when there's no audio at all, or for very short clips.
+  const audioSkip = !facts.hasAudio || (facts.durationSec > 0 && facts.durationSec < 5);
+  const audio: TaskParams["audio"] = {
+    skip: audioSkip,
+    // Default to light; the task will upgrade to aggressive/cloud based on SNR.
+    profile: audioSkip ? "skip" : "ffmpeg-light",
+    // Tier comes from the user profile later; default to standard.
+    tier: "standard",
+  };
+  if (audioSkip) reasoning.push("audio mastering skipped: short clip or no audio");
+  else reasoning.push("audio mastering will run after render, profile decided by measured SNR");
 
   // ---- render -------------------------------------------------------------
   // Big files MUST go through cloud; tiny files render locally for speed.
@@ -102,9 +111,9 @@ export function decide(
   };
 
   // ---- order --------------------------------------------------------------
-  // transcribe → cut → audio → render. Skipped tasks are removed from
-  // `steps` so progress weights and labels stay honest.
-  const steps = (["transcribe", "cut", "audio", "render"] as const).filter((id) => {
+  // transcribe → cut → render → audio. Audio masters the rendered output
+  // so the user always gets the same loudness regardless of render backend.
+  const steps = (["transcribe", "cut", "render", "audio"] as const).filter((id) => {
     if (id === "transcribe") return !transcribe.skip;
     if (id === "audio") return !audio.skip;
     return true;

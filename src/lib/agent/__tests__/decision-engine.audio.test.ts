@@ -3,13 +3,11 @@ import { decide } from "../decision-engine";
 import type { AnalysisFacts } from "../types";
 
 const baseFacts = (over: Partial<AnalysisFacts> = {}): AnalysisFacts => ({
+  fileName: "clip.mp4",
   hasAudio: true,
-  hasVideo: true,
   durationSec: 60,
   fileSizeBytes: 10 * 1024 * 1024,
   language: "en",
-  format: "podcast",
-  pace: "normal",
   ...over,
 });
 

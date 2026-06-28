@@ -938,21 +938,24 @@ function AppPage() {
 
         {busy && (
           <div className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
-            <StepIndicator active={activeStep} t={t} />
-            <div className="mt-5 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
+            <StepIndicator
+              active={activeStep}
+              t={t}
+              phaseProgress={progress}
+              paused={paused}
+            />
+            <div className="mt-5 flex items-baseline justify-between gap-4 text-sm">
+              <span className="text-foreground">
                 {paused ? t.paused : phaseLabel(phase)}
               </span>
-              <span className="font-mono text-xs text-muted-foreground">
-                {phase === "encode" || phase === "detect" || phase === "cloud" ? `${progress}%` : ""}
-              </span>
+              <div className="flex items-baseline gap-3 font-mono text-xs text-muted-foreground tabular-nums">
+                {eta != null && !paused && (
+                  <span>~{formatEta(eta)}</span>
+                )}
+                <span className="text-foreground">{globalProgress}%</span>
+              </div>
             </div>
-            <Progress
-              value={
-                phase === "encode" || phase === "detect" || phase === "cloud" ? progress : undefined
-              }
-              className="mt-2 h-1"
-            />
+            <Progress value={globalProgress} className="mt-2 h-1.5" />
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="ghost" onClick={handlePauseResume} disabled={phase === "upload" || phase === "cloud"}>
                 {paused ? t.resume : t.pause}
@@ -988,7 +991,11 @@ function AppPage() {
             size="lg"
           >
             {(validating || busy) && <Spinner className="mr-2" />}
-            {validating ? t.validating : busy ? t.processing : t.process}
+            {validating
+              ? t.validating
+              : busy
+                ? `${t.processing} ${globalProgress}%`
+                : t.process}
             {(validating || busy) && <span className="sr-only"> — {t.sr_busy}</span>}
           </Button>
         </div>

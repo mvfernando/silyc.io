@@ -16,6 +16,7 @@ export type UploadValidation = {
   sizeMB: number;
   checks: ValidationCheck[];
   reasonKey?:
+    | "err_file_size"
     | "err_validate_unsupported"
     | "err_validate_no_video"
     | "err_validate_no_audio"
@@ -61,11 +62,27 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
     };
   }
   checks.push({ id: "container", status: "pass", detail: `${file.type || "video/*"} · .${ext}` });
+  const sizeStatus = file.size > MAX_UPLOAD_BYTES ? "fail" : file.size > LOCAL_RENDER_MAX_BYTES ? "warn" : "pass";
   checks.push({
     id: "size",
-    status: file.size > MAX_UPLOAD_BYTES ? "fail" : file.size > LOCAL_RENDER_MAX_BYTES ? "warn" : "pass",
+    status: sizeStatus,
     detail: formatFileSize(file.size),
   });
+  if (sizeStatus === "fail") {
+    return {
+      ok: false,
+      durationSec: 0,
+      width: 0,
+      height: 0,
+      hasAudio: "unknown",
+      mime: file.type,
+      ext,
+      sizeMB,
+      checks,
+      reasonKey: "err_file_size",
+      raw: `size=${formatFileSize(file.size)}`,
+    };
+  }
 
   const url = URL.createObjectURL(file);
   const video = document.createElement("video");

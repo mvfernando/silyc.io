@@ -42,7 +42,7 @@ import {
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 import { mapError, type MappedError } from "@/lib/error-mapper";
 import { validateUpload, withBackoff, isTransientCloudError, type UploadValidation, type ValidationCheck } from "@/lib/validate-upload";
-import { LOCAL_RENDER_MAX_BYTES, MAX_UPLOAD_BYTES, formatFileSize } from "@/lib/upload-limits";
+import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
@@ -183,7 +183,6 @@ function AppPage() {
 
   const onFile = async (f: File | null | undefined) => {
     if (!f) return;
-    if (f.size > MAX_UPLOAD_BYTES) return toast.error(t.err_file_size);
     setValidating(true);
     setValidation(null);
     try {
@@ -444,6 +443,7 @@ function AppPage() {
       silences: resume?.silences,
       totalDuration: resume?.totalDuration,
       lastPhase: "upload",
+      cloud: effectiveCloud,
     });
 
     const ext = file.name.split(".").pop() || "mp4";
@@ -463,6 +463,7 @@ function AppPage() {
       let outputExt: string;
       let originalDuration: number;
       let finalDuration: number;
+      let renderedInCloud = false;
       let detected: SilenceRange[];
 
       if (effectiveCloud) {
@@ -506,6 +507,7 @@ function AppPage() {
           outputMime = cr.mime;
           outputExt = cr.ext;
           finalDuration = cr.duration;
+          renderedInCloud = true;
         } catch (cloudErr) {
           if (cloudErr instanceof CancelledError) throw cloudErr;
           const msg = cloudErr instanceof Error ? cloudErr.message : String(cloudErr);
@@ -581,7 +583,7 @@ function AppPage() {
         .upload(outPath, outputBlob, { upsert: true, contentType: outputMime });
       if (outErr) throw outErr;
 
-      const credits = effectiveCloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
+      const credits = renderedInCloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
       setActualCredits(credits);
       appendLog({
         level: "info",
@@ -596,7 +598,7 @@ function AppPage() {
         silenceCount: detected.length,
         silences: detected,
         credits,
-        cloud: effectiveCloud,
+        cloud: renderedInCloud,
       };
 
       await supabase

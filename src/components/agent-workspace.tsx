@@ -29,7 +29,6 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/spinner";
 import { supabase } from "@/integrations/supabase/client";
-import { useI18n } from "@/lib/i18n";
 import { validateUpload } from "@/lib/validate-upload";
 import { formatFileSize, MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 import { formatDuration } from "@/lib/ffmpeg-processor";
@@ -64,7 +63,6 @@ const REFINEMENT_OPTIONS: Array<{ id: Exclude<RefinementChoice, "none" | "manual
 ];
 
 export function AgentWorkspace() {
-  const i18n = useI18n();
   const navigate = useNavigate();
 
   const [stage, setStage] = useState<Stage>("upload");

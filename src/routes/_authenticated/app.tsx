@@ -705,7 +705,10 @@ function AppPage() {
         await qc.invalidateQueries({ queryKey: ["project", projectId!] });
         const mapped = mapError(err, lang);
         appendLog({ level: "error", step: "system", message: `${mapped.title} — ${mapped.raw}` });
-        setLastError(mapped);
+        const withJob: MappedError = cloudJobIdRef.current
+          ? { ...mapped, jobId: cloudJobIdRef.current }
+          : mapped;
+        setLastError(withJob);
         toast.error(mapped.title, { description: mapped.action });
       }
       setBusy(false);

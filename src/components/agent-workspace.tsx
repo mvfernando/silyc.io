@@ -45,6 +45,11 @@ import {
   type TaskResults,
   type ValueReceipt,
 } from "@/lib/agent";
+import {
+  saveFeedback,
+  type FeedbackRating,
+  type FeedbackRefinement,
+} from "@/lib/agent/feedback";
 
 type Stage = "upload" | "working" | "ready" | "failed";
 
@@ -85,6 +90,8 @@ export function AgentWorkspace() {
 
   const controllerRef = useRef<AgentController | null>(null);
   const localBlobRef = useRef<string | null>(null);
+  const runIdRef = useRef<string | null>(null);
+  const [rating, setRating] = useState<FeedbackRating | null>(null);
 
   useEffect(() => () => {
     if (localBlobRef.current) URL.revokeObjectURL(localBlobRef.current);
@@ -101,6 +108,11 @@ export function AgentWorkspace() {
       setResults(null);
       setReceipt(null);
       setCurrentTask(null);
+      setRating(null);
+      runIdRef.current =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
       const validation = await validateUpload(sourceFile).catch(() => null);
       const { data: userData } = await supabase.auth.getUser();
@@ -212,14 +224,38 @@ export function AgentWorkspace() {
             originalFile={file}
             results={results}
             showRefine={showRefine}
+            rating={rating}
+            onRate={(r) => {
+              setRating(r);
+              if (runIdRef.current) {
+                void saveFeedback({ runId: runIdRef.current, rating: r });
+              }
+            }}
             onAskRefine={() => setShowRefine(true)}
-            onRefine={(choice) => file && startAgent(file, choice)}
-            onManual={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
+            onRefine={(choice) => {
+              if (runIdRef.current) {
+                void saveFeedback({
+                  runId: runIdRef.current,
+                  refinementChoice: choice as FeedbackRefinement,
+                });
+              }
+              if (file) startAgent(file, choice);
+            }}
+            onManual={() => {
+              if (runIdRef.current) {
+                void saveFeedback({
+                  runId: runIdRef.current,
+                  refinementChoice: "manual",
+                });
+              }
+              navigate({ to: "/app", search: { legacy: "1" } as never });
+            }}
             onNew={() => {
               setStage("upload");
               setFile(null);
               setResults(null);
               setReceipt(null);
+              setRating(null);
             }}
           />
         )}
@@ -415,6 +451,8 @@ function ReadyStage({
   originalFile,
   results,
   showRefine,
+  rating,
+  onRate,
   onAskRefine,
   onRefine,
   onManual,
@@ -431,6 +469,8 @@ function ReadyStage({
   originalFile: File | null;
   results: TaskResults | null;
   showRefine: boolean;
+  rating: FeedbackRating | null;
+  onRate: (r: FeedbackRating) => void;
   onAskRefine: () => void;
   onRefine: (choice: RefinementChoice) => void;
   onManual: () => void;
@@ -545,6 +585,43 @@ function ReadyStage({
         <Button variant="ghost" size="lg" onClick={onNew}>
           {t.agent_new_video}
         </Button>
+      </div>
+
+      {/* Reaction row — 3 honest options, no thumbs-down */}
+      <div className="mt-10 flex flex-col items-center gap-3">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+          {t.agent_reaction_title}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {([
+            { r: 3 as const, label: t.agent_reaction_great, emoji: "😍" },
+            { r: 2 as const, label: t.agent_reaction_good, emoji: "🙂" },
+            { r: 1 as const, label: t.agent_reaction_meh, emoji: "😕" },
+          ]).map(({ r, label, emoji }) => {
+            const active = rating === r;
+            return (
+              <button
+                key={r}
+                type="button"
+                onClick={() => onRate(r)}
+                aria-pressed={active}
+                className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
+                  active
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:bg-background/70"
+                }`}
+              >
+                <span className="mr-1.5" aria-hidden>{emoji}</span>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {rating != null && (
+          <p className="text-xs text-muted-foreground">
+            {rating === 1 ? t.agent_reaction_meh_hint : t.agent_reaction_thanks}
+          </p>
+        )}
       </div>
 
       {/* Refine — goals, not sliders */}

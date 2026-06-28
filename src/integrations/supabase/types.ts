@@ -67,6 +67,47 @@ export type Database = {
           },
         ]
       }
+      pipeline_feedback: {
+        Row: {
+          created_at: string
+          id: string
+          rating: number | null
+          refinement_choice: string | null
+          run_id: string
+          updated_at: string
+          user_id: string
+          version_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          rating?: number | null
+          refinement_choice?: string | null
+          run_id: string
+          updated_at?: string
+          user_id: string
+          version_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          rating?: number | null
+          refinement_choice?: string | null
+          run_id?: string
+          updated_at?: string
+          user_id?: string
+          version_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_feedback_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "project_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_versions: {
         Row: {
           created_at: string

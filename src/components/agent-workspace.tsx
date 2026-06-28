@@ -695,6 +695,71 @@ function ReceiptCard({ label, value }: { label: string; value: string }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Optional comment field — saved to pipeline_feedback.comment         */
+/* ------------------------------------------------------------------ */
+
+function CommentField({
+  t,
+  onSave,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  onSave: (comment: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const max = 1000;
+
+  const handleSave = () => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    onSave(trimmed);
+    setSavedAt(Date.now());
+  };
+
+  return (
+    <div className="mt-8 mx-auto max-w-2xl">
+      <label
+        htmlFor="agent-comment"
+        className="block text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80 text-center"
+      >
+        {t.agent_comment_label}
+      </label>
+      <textarea
+        id="agent-comment"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value.slice(0, max));
+          if (savedAt) setSavedAt(null);
+        }}
+        placeholder={t.agent_comment_placeholder}
+        rows={3}
+        className="mt-3 w-full resize-none rounded-2xl border border-border/60 bg-muted/10 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
+      />
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+          {value.length}/{max}
+        </span>
+        <div className="flex items-center gap-3">
+          {savedAt && (
+            <span className="text-xs text-muted-foreground">
+              {t.agent_comment_saved}
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!value.trim()}
+            onClick={handleSave}
+          >
+            {t.agent_comment_save}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Feedback History — past reactions & refinement choices per run_id   */
 /* ------------------------------------------------------------------ */
 

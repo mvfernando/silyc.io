@@ -592,6 +592,7 @@ function AppPage() {
           const det = await detectSilencesOnly(file, {
             thresholdDb: threshold,
             minPauseSec: minPause,
+            paddingSec: padding,
             exportOptions: exportOpts,
             controller,
             onProgress: (e) => {
@@ -641,6 +642,7 @@ function AppPage() {
           const local = await processVideoRemoveSilence(file, {
             thresholdDb: threshold,
             minPauseSec: minPause,
+            paddingSec: padding,
             exportOptions: exportOpts,
             controller,
             cachedSilences: silences,
@@ -661,6 +663,7 @@ function AppPage() {
         const result = await processVideoRemoveSilence(file, {
           thresholdDb: threshold,
           minPauseSec: minPause,
+            paddingSec: padding,
           exportOptions: exportOpts,
           controller,
           cachedSilences: resume?.silences,

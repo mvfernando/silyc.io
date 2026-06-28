@@ -291,6 +291,9 @@ function AppPage() {
       if (!name) setName(f.name.replace(/\.[^.]+$/, ""));
       if (targetResume && fingerprintFile(f) === targetResume.fingerprint) {
         setResume(targetResume);
+        if (targetResume.silences && targetResume.totalDuration) {
+          setDetection({ silences: targetResume.silences, duration: targetResume.totalDuration });
+        }
       } else {
         setResume(null);
       }

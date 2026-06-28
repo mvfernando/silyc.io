@@ -613,6 +613,7 @@ function AppPage() {
             onDetectionComplete: ({ silences, totalDuration }) => {
               detectionCacheRef.current = { silences, duration: totalDuration };
               setDetection({ silences, duration: totalDuration });
+              setKeepOverrides(new Set());
               appendLog({
                 level: "info",
                 step: "silences",
@@ -683,6 +684,7 @@ function AppPage() {
           onDetectionComplete: ({ silences, totalDuration }) => {
             detectionCacheRef.current = { silences, duration: totalDuration };
             setDetection({ silences, duration: totalDuration });
+            setKeepOverrides(new Set());
             appendLog({
               level: "info",
               step: "silences",

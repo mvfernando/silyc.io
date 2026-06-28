@@ -45,6 +45,7 @@ import { validateUpload, withBackoff, isTransientCloudError, type UploadValidati
 import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 import { PreviewModal } from "@/components/preview-modal";
 import { SilenceTimeline } from "@/components/silence-timeline";
+import { SILENCE_PRESETS, matchPreset, type SilencePreset } from "@/lib/silence-presets";
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
@@ -943,7 +944,17 @@ function AppPage() {
           </div>
 
           {removeSilence && (
-            <div className="grid gap-6 border-t border-border/60 pt-6 md:grid-cols-2">
+            <div className="space-y-5 border-t border-border/60 pt-6">
+              <PresetPicker
+                t={t}
+                current={matchPreset(threshold, minPause, padding)}
+                onPick={(p) => {
+                  setThreshold(p.threshold);
+                  setMinPause(p.minPause);
+                  setPadding(p.padding);
+                }}
+              />
+              <div className="grid gap-6 md:grid-cols-2">
               <SliderField
                 label={t.opt_threshold}
                 value={threshold}
@@ -973,6 +984,7 @@ function AppPage() {
                 decimals={2}
                 onChange={setPadding}
               />
+              </div>
             </div>
           )}
         </section>

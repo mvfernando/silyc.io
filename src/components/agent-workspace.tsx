@@ -633,6 +633,9 @@ function ReadyStage({
         )}
       </div>
 
+      {/* Optional comment — free-form context for this run */}
+      <CommentField t={t} onSave={onComment} />
+
       {/* History — past reactions & refinement choices per run_id */}
       <FeedbackHistorySection t={t} rating={rating} />
 

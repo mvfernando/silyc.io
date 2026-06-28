@@ -442,6 +442,7 @@ function AppPage() {
     setActualCredits(null);
     markPhase("load");
     setPaused(false);
+    cloudJobIdRef.current = null;
     attemptsRef.current += 1;
     appendLog({
       level: "info",

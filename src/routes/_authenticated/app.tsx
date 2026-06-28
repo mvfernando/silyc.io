@@ -1622,10 +1622,23 @@ function PresetPicker({
   t,
   current,
   onPick,
+  snapshot,
+  onApplyCustom,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   current: ReturnType<typeof matchPreset>;
   onPick: (p: SilencePreset) => void;
+  snapshot: {
+    threshold: number;
+    minPause: number;
+    padding: number;
+    removeSilence: boolean;
+    enhanceAudio: boolean;
+    colorGrade: boolean;
+    cloud: boolean;
+    exportOpts: Record<string, unknown>;
+  };
+  onApplyCustom: (cp: CustomPreset) => void;
 }) {
   const meta: Record<SilencePreset["id"], { label: string; desc: string }> = {
     interview: { label: t.preset_interview, desc: t.preset_interview_d },
@@ -1633,6 +1646,19 @@ function PresetPicker({
     lowvoice: { label: t.preset_lowvoice, desc: t.preset_lowvoice_d },
     aggressive: { label: t.preset_aggressive, desc: t.preset_aggressive_d },
     screencast: { label: t.preset_screencast, desc: t.preset_screencast_d },
+  };
+  const [customs, setCustoms] = useState<CustomPreset[]>(() => listCustomPresets());
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState("");
+  const refresh = () => setCustoms(listCustomPresets());
+  const handleSave = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    saveCustomPreset({ name: trimmed, ...snapshot });
+    setName("");
+    setSaving(false);
+    refresh();
+    toast.success(t.preset_save_done);
   };
   return (
     <div className="space-y-2">
@@ -1671,6 +1697,81 @@ function PresetPicker({
             </button>
           );
         })}
+      </div>
+
+      <div className="space-y-2 pt-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm">{t.preset_my}</Label>
+          {!saving && (
+            <button
+              type="button"
+              onClick={() => setSaving(true)}
+              className="text-[11px] font-medium text-primary hover:underline"
+            >
+              {t.preset_save}
+            </button>
+          )}
+        </div>
+        {saving && (
+          <div className="flex gap-2">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t.preset_save_placeholder}
+              className="h-9 text-sm"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSave();
+                if (e.key === "Escape") {
+                  setSaving(false);
+                  setName("");
+                }
+              }}
+            />
+            <Button type="button" size="sm" onClick={handleSave} disabled={!name.trim()}>
+              {t.preset_save_confirm}
+            </Button>
+          </div>
+        )}
+        {customs.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">{t.preset_empty}</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {customs.map((cp) => (
+              <div
+                key={cp.id}
+                className="group flex items-start justify-between gap-2 rounded-lg border border-border/70 bg-card/30 p-3 transition-colors hover:border-border hover:bg-card/60"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    onApplyCustom(cp);
+                    toast.success(t.preset_applied);
+                  }}
+                  className="flex-1 text-left"
+                >
+                  <div className="text-sm font-medium text-foreground/90">{cp.name}</div>
+                  <div className="mt-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {cp.threshold}dB · {cp.minPause.toFixed(2)}s · {cp.padding.toFixed(2)}s
+                    {cp.cloud ? " · cloud" : ""}
+                    {cp.enhanceAudio ? " · AI" : ""}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteCustomPreset(cp.id);
+                    refresh();
+                  }}
+                  className="text-[10px] uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                  aria-label={t.preset_delete}
+                >
+                  {t.preset_delete}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

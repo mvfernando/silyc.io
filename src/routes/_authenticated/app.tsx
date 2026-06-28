@@ -175,6 +175,7 @@ function AppPage() {
   const [keepOverrides, setKeepOverrides] = useState<Set<number>>(new Set());
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<UploadValidation | null>(null);
+  const [previewRange, setPreviewRange] = useState<PreviewRange | null>(null);
 
   type ResultState = {
     projectId: string;

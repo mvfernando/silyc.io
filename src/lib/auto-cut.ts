@@ -91,15 +91,25 @@ export function chunksToSilences(
 
   // Filler word removal (independent ranges; review on the timeline)
   if (removeFillers && fillerSet.size > 0) {
-    for (const c of sorted) {
+    // Confidence gate: only treat a chunk as filler when
+    //  - the token matches the filler list exactly, AND
+    //  - the chunk is short enough that a mis-transcription is unlikely
+    //    to be a real word (most fillers run < 0.5s; cap at 1.2s).
+    //  - we never drop the very first or last word, where cutting tends
+    //    to make the result feel abrupt.
+    const MAX_FILLER_DUR = 1.2;
+    for (let i = 0; i < sorted.length; i++) {
+      if (i === 0 || i === sorted.length - 1) continue;
+      const c = sorted[i];
       const tok = normalize(c.text);
-      if (tok && fillerSet.has(tok)) {
-        const start = Math.max(0, c.start - pad / 2);
-        const end = Math.min(totalDuration, c.end + pad / 2);
-        if (end > start) {
-          ranges.push({ start, end });
-          fillersRemoved++;
-        }
+      if (!tok || !fillerSet.has(tok)) continue;
+      const dur = c.end - c.start;
+      if (dur <= 0 || dur > MAX_FILLER_DUR) continue;
+      const start = Math.max(0, c.start - pad / 2);
+      const end = Math.min(totalDuration, c.end + pad / 2);
+      if (end > start) {
+        ranges.push({ start, end });
+        fillersRemoved++;
       }
     }
   }

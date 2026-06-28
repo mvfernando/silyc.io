@@ -286,6 +286,7 @@ function AppPage() {
       setFile(f);
       detectionCacheRef.current = null;
       setDetection(null);
+      setKeepOverrides(new Set());
       if (f.size > LOCAL_RENDER_MAX_BYTES) {
         setCloud(true);
         toast.info(t.auto_cloud_enabled);
@@ -295,6 +296,7 @@ function AppPage() {
         setResume(targetResume);
         if (targetResume.silences && targetResume.totalDuration) {
           setDetection({ silences: targetResume.silences, duration: targetResume.totalDuration });
+          setKeepOverrides(new Set());
         }
       } else {
         setResume(null);

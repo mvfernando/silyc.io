@@ -188,8 +188,23 @@ export async function detectSilencesOnly(file: File, opts: ProcessOptions): Prom
   await waitWhilePaused(controller);
 
   let logBuf = "";
+  let detectedDuration = 0;
+  const timeRe = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/;
+  const durRe = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/;
   const logHandler = ({ message }: { message: string }) => {
     logBuf += message + "\n";
+    if (!detectedDuration) {
+      const dm = message.match(durRe);
+      if (dm) detectedDuration = +dm[1] * 3600 + +dm[2] * 60 + parseFloat(dm[3]);
+    }
+    if (detectedDuration) {
+      const tm = message.match(timeRe);
+      if (tm) {
+        const t = +tm[1] * 3600 + +tm[2] * 60 + parseFloat(tm[3]);
+        const p = Math.max(0, Math.min(0.99, t / detectedDuration));
+        onProgress?.({ phase: "detect", progress: p });
+      }
+    }
   };
   try {
     ffmpeg.on("log", logHandler);
@@ -250,8 +265,23 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
     onProgress?.({ phase: "detect", progress: 1 });
   } else {
     let logBuf = "";
+    let detectedDuration = 0;
+    const timeRe = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/;
+    const durRe = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/;
     const logHandler = ({ message }: { message: string }) => {
       logBuf += message + "\n";
+      if (!detectedDuration) {
+        const dm = message.match(durRe);
+        if (dm) detectedDuration = +dm[1] * 3600 + +dm[2] * 60 + parseFloat(dm[3]);
+      }
+      if (detectedDuration) {
+        const tm = message.match(timeRe);
+        if (tm) {
+          const t = +tm[1] * 3600 + +tm[2] * 60 + parseFloat(tm[3]);
+          const p = Math.max(0, Math.min(0.99, t / detectedDuration));
+          onProgress?.({ phase: "detect", progress: p });
+        }
+      }
     };
     ffmpeg.on("log", logHandler);
     await ffmpeg.exec([

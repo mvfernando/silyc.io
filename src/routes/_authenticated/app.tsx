@@ -375,7 +375,7 @@ function AppPage() {
       fingerprint: fingerprintFile(f),
       fileName: f.name,
       fileSize: f.size,
-      settings: { threshold, minPause, removeSilence },
+      settings: { threshold, minPause, padding, removeSilence, enhanceAudio, colorGrade, cloud },
       exportOpts,
       lastPhase,
       completedSteps: lastPhaseToCompletedSteps(lastPhase),
@@ -561,7 +561,7 @@ function AppPage() {
           user_id: userId,
           name: name || file.name,
           status: "processing",
-          settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, exportOpts, cloud: effectiveCloud },
+          settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, padding, exportOpts, cloud: effectiveCloud },
         })
         .select()
         .single();
@@ -763,7 +763,7 @@ function AppPage() {
         project_id: projectId,
         user_id: userId,
         label: versionLabel,
-        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, cloud: effectiveCloud },
+        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, padding, cloud: effectiveCloud },
         export_options: exportOpts as unknown as Record<string, unknown>,
         output_path: outPath,
         stats: { ...stats, logs: logs.slice(-200), attempts: attemptsRef.current },

@@ -45,6 +45,11 @@ import {
   type TaskResults,
   type ValueReceipt,
 } from "@/lib/agent";
+import {
+  saveFeedback,
+  type FeedbackRating,
+  type FeedbackRefinement,
+} from "@/lib/agent/feedback";
 
 type Stage = "upload" | "working" | "ready" | "failed";
 
@@ -85,6 +90,8 @@ export function AgentWorkspace() {
 
   const controllerRef = useRef<AgentController | null>(null);
   const localBlobRef = useRef<string | null>(null);
+  const runIdRef = useRef<string | null>(null);
+  const [rating, setRating] = useState<FeedbackRating | null>(null);
 
   useEffect(() => () => {
     if (localBlobRef.current) URL.revokeObjectURL(localBlobRef.current);
@@ -101,6 +108,11 @@ export function AgentWorkspace() {
       setResults(null);
       setReceipt(null);
       setCurrentTask(null);
+      setRating(null);
+      runIdRef.current =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
       const validation = await validateUpload(sourceFile).catch(() => null);
       const { data: userData } = await supabase.auth.getUser();
@@ -212,14 +224,38 @@ export function AgentWorkspace() {
             originalFile={file}
             results={results}
             showRefine={showRefine}
+            rating={rating}
+            onRate={(r) => {
+              setRating(r);
+              if (runIdRef.current) {
+                void saveFeedback({ runId: runIdRef.current, rating: r });
+              }
+            }}
             onAskRefine={() => setShowRefine(true)}
-            onRefine={(choice) => file && startAgent(file, choice)}
-            onManual={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
+            onRefine={(choice) => {
+              if (runIdRef.current) {
+                void saveFeedback({
+                  runId: runIdRef.current,
+                  refinementChoice: choice as FeedbackRefinement,
+                });
+              }
+              if (file) startAgent(file, choice);
+            }}
+            onManual={() => {
+              if (runIdRef.current) {
+                void saveFeedback({
+                  runId: runIdRef.current,
+                  refinementChoice: "manual",
+                });
+              }
+              navigate({ to: "/app", search: { legacy: "1" } as never });
+            }}
             onNew={() => {
               setStage("upload");
               setFile(null);
               setResults(null);
               setReceipt(null);
+              setRating(null);
             }}
           />
         )}

@@ -116,7 +116,7 @@ async function runCloud(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<
         format: (ctx.params.exportOptions.container as "mp4") ?? "mp4",
       },
     }),
-    { attempts: 3, baseDelayMs: 1500 },
+    { attempts: 3, baseMs: 1500, isRetriable: isTransientCloudError },
   );
   ctx.onLog(`shotstack job ${job.id} on ${job.env}`);
   ctx.onProgress(0.2);

@@ -779,6 +779,46 @@ function triggerDownload(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function MissingProject({
+  t,
+  id,
+  error,
+  onBack,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  id: string;
+  error: string | null;
+  onBack: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const handleForceDelete = async () => {
+    setBusy(true);
+    try {
+      await supabase.from("projects").delete().eq("id", id);
+      toast.success(t.deleted);
+      onBack();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t.err_delete);
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="mt-16 rounded-xl border border-dashed border-border bg-card/30 p-8 text-center">
+      <h2 className="text-lg font-semibold">{t.proj_not_found_title}</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {error ?? t.proj_not_found_desc}
+      </p>
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <Button variant="outline" onClick={onBack}>{t.proj_back}</Button>
+        <Button variant="ghost" onClick={handleForceDelete} disabled={busy} aria-busy={busy}>
+          {busy && <Spinner className="mr-2" />}
+          {t.proj_delete}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function PublicStatusPanel({
   t,
   completedAt,

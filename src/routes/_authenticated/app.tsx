@@ -593,12 +593,18 @@ function AppPage() {
       let renderedInCloud = false;
       let detected: SilenceRange[];
 
+      const cachedDet = detectionCacheRef.current;
+      const effectiveCachedSilences = cachedDet
+        ? cachedDet.silences.filter((_, i) => !keepOverrides.has(i))
+        : resume?.silences;
+      const effectiveCachedDuration = cachedDet?.duration ?? resume?.totalDuration;
+
       if (effectiveCloud) {
         // For cloud rendering we only run silence detection locally, then let
         // Shotstack render the final file. This avoids the previous full local
         // FFmpeg render before cloud, which could crash on larger uploads.
-        let silences = resume?.silences;
-        let totalDuration = resume?.totalDuration;
+        let silences = effectiveCachedSilences;
+        let totalDuration = effectiveCachedDuration;
         if (!silences || typeof totalDuration !== "number") {
           const det = await detectSilencesOnly(file, {
             thresholdDb: threshold,

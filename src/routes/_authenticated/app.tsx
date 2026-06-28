@@ -46,6 +46,7 @@ import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 import { PreviewModal } from "@/components/preview-modal";
 import { SilenceTimeline } from "@/components/silence-timeline";
 import { RangePreview, type PreviewRange } from "@/components/range-preview";
+import { AutoCutCard } from "@/components/auto-cut-card";
 import {
   SILENCE_PRESETS,
   matchPreset,
@@ -1056,6 +1057,40 @@ function AppPage() {
         />
 
         {validation && <ValidationPanel t={t} v={validation} />}
+
+        <AutoCutCard
+          file={file}
+          totalDurationSec={validation?.durationSec ?? detection?.duration ?? 0}
+          language={lang}
+          disabled={busy || validating}
+          labels={{
+            title: t.autocut_title,
+            subtitle: t.autocut_subtitle,
+            cta: t.autocut_cta,
+            ctaBusy: t.autocut_busy,
+            cancel: t.cancel,
+            upload: t.autocut_phase_upload,
+            transcribe: t.autocut_phase_transcribe,
+            analyzing: t.autocut_phase_analyze,
+            done: t.autocut_phase_done,
+            fillers: t.autocut_remove_fillers,
+            estCost: t.autocut_est_cost,
+            estimate: t.autocut_estimate,
+            needFile: t.err_no_file,
+            errPrefix: t.failed,
+            ready: (n, dur) => t.autocut_ready.replace("{n}", String(n)).replace("{dur}", dur),
+          }}
+          onResult={({ silences, duration, transcript, detectedLanguage, fillersRemoved }) => {
+            detectionCacheRef.current = { silences, duration };
+            setDetection({ silences, duration });
+            setKeepOverrides(new Set());
+            appendLog({
+              level: "info",
+              step: "silences",
+              message: `auto-cut: ${silences.length} cuts derived from transcript (${transcript.length} chars, lang=${detectedLanguage ?? "auto"}, fillers=${fillersRemoved})`,
+            });
+          }}
+        />
 
         <ExportPanel value={exportOpts} onChange={setExportOpts} />
 

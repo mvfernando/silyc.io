@@ -1,131 +1,80 @@
-# SilentCut — Assistente de Pós-Produção (MVP)
+## Objetivo
 
-App web bilíngue (PT/EN) que automatiza limpeza de timeline, áudio e cor. Estética **dark cinematográfica** (fundo `#0A0A0B`, painéis `#16161A`, texto `#E5E5E5`, acento ember `#FF4D2E`).
+Tirar do usuário a tarefa de "adivinhar" threshold, min pause, padding e preset. A IA lê o áudio, transcreve com timestamps por palavra e decide os cortes respeitando o início/fim real da fala. Sliders e presets continuam existindo, mas escondidos atrás de "Avançado" — o fluxo padrão vira **um botão: "Cortar automaticamente"**.
 
-## Arquitetura de processamento (híbrida)
+## O que já temos hoje
 
+- **Detecção heurística de silêncio** via FFmpeg.wasm (`silencedetect`) com threshold/min pause/padding configuráveis.
+- **Timeline interativa** que mostra cortes (vermelho), kept (verde), overrides manuais (amarelo), com prévia A/B do intervalo selecionado.
+- **Replicate integrado** (token + edge function) para o `resemble-ai/resemble-enhance` de otimização de áudio.
+- **Presets salvos**, recuperação de sessão, histórico de versões, render local + nuvem (Shotstack), exportação com codec/bitrate.
+- **Validação prévia** do arquivo (formato, áudio, duração) e error mapper com causas/ações.
 
-| Tarefa                                               | Onde roda                   | Por quê                                                                                                                         |
-| ---------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Remoção de silêncio/pausas                           | **FFmpeg.wasm no browser**  | Funciona sem API, sem custo, ideal para vídeos ≤ ~200 MB. Detecta silêncio com `silencedetect`, monta lista de cortes e remuxa. |
-| Normalização de volume + redução básica de ruído     | **FFmpeg.wasm no browser**  | Filtros `loudnorm` e `afftdn` rodam direto no wasm.                                                                             |
-| Otimização de áudio com IA (denoise + clareza vocal) | **API externa (Replicate)** | Modelo `resemble-ai/resemble-enhance` para limpeza profissional de voz.                                                         |
-| Correção de cor cinematográfica                      | **API externa (Replicate)** | Pipeline com LUT + auto-exposição via modelo de color grading.                                                                  |
-| Login + histórico de projetos                        | **Lovable Cloud**           | Auth (email/senha + Google), tabela `projects`, storage para arquivos processados.                                              |
+## O que falta para o "Modo Auto" funcionar
 
+### 1. Transcrição com timestamps por palavra (Replicate Whisper)
+- Nova server function `transcribeForCuts` que chama `openai/whisper` (ou `vaibhavs10/incredibly-fast-whisper` — 10× mais rápido) no Replicate.
+- Saída esperada: `{ words: [{ text, start, end, confidence }], language }`.
+- O arquivo de vídeo é enviado via signed URL do Supabase Storage (já fazemos upload hoje), Replicate aceita vídeo direto e extrai o áudio.
+- Cache: hash SHA-256 do arquivo → resultado salvo numa nova tabela `transcriptions` para evitar reprocessar o mesmo vídeo.
 
-> A primeira fase de cada job sempre passa pelo FFmpeg.wasm local (corte de silêncio). As etapas de IA são opcionais — usuário ativa via switches antes de enviar.
+### 2. Algoritmo "palavra-a-palavra" para decidir cortes
+Substituir a derivação atual (gaps de silêncio brutos) por uma que respeita fala:
+- Para cada par de palavras consecutivas, calcular `gap = word[i+1].start − word[i].end`.
+- Se `gap > 0.4s` → candidato a corte. Padding automático: 80 ms antes/depois do limite da palavra (nunca cortar dentro do som).
+- Confiança baixa (`confidence < 0.5`) → não corta nem mesmo em silêncio, é zona de dúvida.
+- Início do vídeo: corta tudo antes da primeira palavra menos 200 ms.
+- Fim do vídeo: corta tudo depois da última palavra mais 300 ms.
+- Resultado entra no mesmo pipeline já existente (`silences[]`), então toda a UI/timeline/render continua funcionando.
 
-## Estrutura de páginas
+### 3. Detecção de fillers (opcional, toggle)
+- Whisper devolve as palavras transcritas — comparar contra lista por idioma (PT: "é", "tipo", "né", "ahn", "hum"; EN: "um", "uh", "like", "you know").
+- Cada filler vira um silence range adicional. Usuário pode rever na timeline antes de exportar (já temos override por clique).
 
-```text
-src/routes/
-├── __root.tsx                          # shell + provider de i18n + listener auth
-├── index.tsx                           # landing pública (hero, antes/depois, features, CTA)
-├── auth.tsx                            # login/cadastro (email+senha, Google)
-└── _authenticated/
-    ├── route.tsx                       # gate gerenciado (já existe na integração)
-    ├── app.tsx                         # workspace: upload + opções + barra de progresso
-    ├── projects.tsx                    # lista de projetos do usuário
-    └── projects.$id.tsx                # detalhe: player antes/depois, download, logs
+### 4. UI: "Cortar automaticamente" como caminho padrão
+- Botão grande "Cortar automaticamente com IA" no topo do workspace, depois do upload.
+- Mostra estado em duas etapas: **Transcrevendo → Decidindo cortes → Pronto para revisar**.
+- Estimativa de créditos antes (Whisper ~$0.006/min) e custo real depois.
+- Painel "Avançado" colapsado por padrão com os sliders, presets e toggle "preferir silêncio bruto (FFmpeg)" para quem não quiser usar a IA.
+
+### 5. Tabela `transcriptions` (cache + histórico)
 ```
-
-## Banco de dados (Lovable Cloud)
-
-```sql
-create table public.projects (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  name text not null,
-  status text not null default 'pending',     -- pending|processing|done|error
-  source_path text,                            -- storage path do original
-  output_path text,                            -- storage path do resultado
-  settings jsonb not null default '{}'::jsonb, -- {removeSilence, enhanceAudio, colorGrade, silenceThreshold...}
-  stats jsonb default '{}'::jsonb,             -- {originalDuration, finalDuration, secondsSaved}
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-grant select, insert, update, delete on public.projects to authenticated;
-grant all on public.projects to service_role;
-alter table public.projects enable row level security;
-
-create policy "users read own projects" on public.projects
-  for select to authenticated using (auth.uid() = user_id);
-create policy "users insert own projects" on public.projects
-  for insert to authenticated with check (auth.uid() = user_id);
-create policy "users update own projects" on public.projects
-  for update to authenticated using (auth.uid() = user_id);
-create policy "users delete own projects" on public.projects
-  for delete to authenticated using (auth.uid() = user_id);
+file_hash text primary key
+user_id uuid
+duration_seconds numeric
+language text
+words jsonb          -- [{text, start, end, confidence}]
+model text           -- "incredibly-fast-whisper@v1"
+created_at timestamptz
 ```
+RLS: usuário só lê/escreve as suas. GRANT padrão para `authenticated`.
 
-Mais um bucket de storage `videos/` privado, com policies escopadas por `auth.uid()` na primeira parte do path.
+### 6. Fallback e robustez
+- Se Replicate falhar (timeout, 402, 500) → cai automaticamente para o detector FFmpeg atual, registra no log do job ("Auto-mode indisponível, usando detecção de silêncio").
+- Já temos backoff exponencial no Shotstack — reaproveitamos o mesmo helper.
+- Vídeos > 30 min: avisa o custo (~$0.18 a $0.30) antes de disparar.
 
-## Server functions
+## O que NÃO muda
 
-- `createProject({ name, settings })` — cria registro `projects` (autenticado).
-- `getUploadUrl({ projectId, kind })` — assina URL para upload do original ou do resultado.
-- `enhanceAudio({ projectId, audioUrl })` — chama Replicate `resemble-enhance`, salva no storage, atualiza `output_path`.
-- `colorGrade({ projectId, frameUrl })` — chama Replicate modelo de color, retorna LUT/preset aplicado pelo browser via FFmpeg.wasm.
-- `listProjects()` / `getProject({ id })` / `deleteProject({ id })`.
+- Timeline interativa, overrides manuais, prévia de intervalo, render local/cloud, exportação, histórico, audio enhancement e color grading continuam exatamente como estão.
+- Sliders e presets ficam — só somem do caminho principal. Quem quiser refinar, abre "Avançado".
 
-`REPLICATE_API_TOKEN` é guardado via `add_secret` depois que o usuário confirmar que quer ativar as opções de IA.
+## Decisão sobre os outros dois pedidos
 
-## Fluxo do usuário
+Excluir/renomear/duplicar presets continua fazendo sentido para o modo Avançado. **Sugiro pausar** essa parte até decidirmos o modo Auto, porque se 90% dos usuários nunca abrir "Avançado", manter três operações em presets vira ruído. Se quiser, eu implemento depois do Auto Mode.
 
-1. Landing → CTA "Começar grátis" → `/auth`.
-2. Após login, vai pra `/app`: dropzone, switches (Remover silêncio, Otimizar áudio, Color grading cinematográfico), sliders avançados (limiar de silêncio em dB, pausa mínima em ms).
-3. Ao clicar **Processar**:
-  - cria projeto, sobe original pro storage,
-  - FFmpeg.wasm extrai áudio, roda `silencedetect`, calcula cortes, remuxa vídeo limpo,
-  - se "otimizar áudio" ativo: server fn → Replicate → áudio limpo retorna e é mesclado,
-  - se "color grading" ativo: server fn pega frame de referência, gera LUT, FFmpeg.wasm aplica,
-  - resultado vai pro storage, `projects.status='done'`, `stats` preenchida.
-4. Tela do projeto mostra player A/B (antes/depois), tempo economizado, botão de download e botão de excluir.
+## Ordem de implementação sugerida
 
-## i18n (PT/EN)
+1. Tabela `transcriptions` + RLS + GRANT.
+2. Server function `transcribeForCuts` (Replicate + cache).
+3. Conversor `words → silences[]` com regras de limite de palavra.
+4. Toggle de fillers por idioma.
+5. UI "Cortar automaticamente" + colapsar Avançado.
+6. Telemetria de custo real e fallback para FFmpeg.
 
-`src/lib/i18n.tsx` — context simples com dicionários `pt` / `en` em JSON, toggle no header, persistência em `localStorage`, idioma padrão detectado por `navigator.language`. Sem libs pesadas.
+## Pergunta antes de seguir
 
-## Design system
-
-- Adiciona tokens em `src/styles.css`: `--background: oklch(0.14 0 0)`, `--card: oklch(0.18 0 0)`, `--foreground: oklch(0.92 0 0)`, `--primary: oklch(0.66 0.22 35)` (ember), `--muted-foreground: oklch(0.6 0 0)`, `--border: oklch(1 0 0 / 8%)`.
-- Tipografia: **Space Grotesk** (display) + **Inter** (texto) carregados via `<link>` no `__root.tsx`.
-- Componentes shadcn em variantes escuras; cards com leve grão/ruído via SVG; gradientes radiais sutis no hero.
-- Microanimações com Motion (entradas, contador de "tempo economizado", waveform animada na landing).
-- Sobre design
-  Aqui eu discordo parcialmente do plan do Lovable: **dark cinematográfica + Space Grotesk + gradientes radiais + grão + waveform animada** pode ficar visualmente apelativo, mas também corre o risco de cair numa estética muito parecida com templates AI/SaaS. Além disso, o próprio guidance de design que tenho carregado recomenda evitar padrões visuais genéricos como gradientes chamativos, estética excessivamente “AI” e fontes muito polarizantes; Space Grotesk aparece explicitamente na lista de fontes a evitar para web generalista.[shotstack](https://shotstack.io)
-  Eu manteria o dark, mas mais contido:
-  - Fundo escuro sim.
-  - Acento ember sim.
-  - Menos gradiente radial decorativo.
-  - Menos “cinematic vibe” abstrata.
-  - Tipografia mais segura, como Satoshi/Inter ou General Sans/Inter.[shotstack](https://shotstack.io)
-
-## Detalhes técnicos
-
-- FFmpeg.wasm: pacote `@ffmpeg/ffmpeg` + `@ffmpeg/util`, core servido como asset estático em `public/ffmpeg/` (single-thread; multi-thread requer COOP/COEP que não temos garantido).
-- Processamento em Web Worker para não travar a UI; progresso reportado via `postMessage`.
-- Uploads diretos browser → Storage (sem passar pelo Worker do servidor, que tem limites de payload).
-- Validação Zod em todos os inputs (nome do projeto, settings).
-- Rotas `index` e `auth` são públicas; tudo de usuário fica sob `_authenticated/`.
-
-## Fora de escopo (MVP)
-
-- Edição manual da timeline.
-- Legendas/transcrição automática.
-- Exportação para formatos além de MP4 H.264.
-- Pagamento/planos.
-
-## Ordem de implementação
-
-1. Ativar Lovable Cloud + habilitar auth (email+senha, Google) + criar tabela `projects` + bucket storage.
-2. Design system (tokens, fontes, componentes base) + landing pública bilíngue.
-3. Página `/auth` + i18n + listener de auth no `__root`.
-4. Workspace `/app` com upload e FFmpeg.wasm rodando remoção de silêncio (caminho feliz local primeiro).
-5. Storage de resultados + lista `/projects` + detalhe `/projects/$id`.
-6. Pedir `REPLICATE_API_TOKEN`, implementar server functions de IA, ligar switches.
-7. Polimento: animações, estados de erro, copy bilíngue, vídeo demo na landing.
-
-Quando aprovar, começo pelo passo 1.
+Confirma 3 coisas:
+1. **Modelo Whisper**: posso usar `vaibhavs10/incredibly-fast-whisper` (mais rápido e barato) em vez do `openai/whisper` oficial?
+2. **Fillers**: liga por padrão ou deixa como toggle desligado?
+3. **Presets**: implemento as três operações (excluir/renomear/duplicar) agora junto, ou só depois que o Modo Auto estiver pronto?

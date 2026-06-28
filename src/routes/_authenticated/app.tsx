@@ -19,6 +19,7 @@ import {
   CancelledError,
   createController,
   defaultExportOptions,
+  detectSilencesOnly,
   formatDuration,
   processVideoRemoveSilence,
   type Controller,
@@ -41,8 +42,8 @@ import {
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 import { mapError, type MappedError } from "@/lib/error-mapper";
 import { validateUpload, withBackoff, isTransientCloudError, type UploadValidation, type ValidationCheck } from "@/lib/validate-upload";
+import { LOCAL_RENDER_MAX_BYTES, MAX_UPLOAD_BYTES, formatFileSize } from "@/lib/upload-limits";
 
-const MAX_BYTES = 220 * 1024 * 1024;
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
 type SearchParams = { reprocess?: string; resume?: string };
@@ -182,8 +183,7 @@ function AppPage() {
 
   const onFile = async (f: File | null | undefined) => {
     if (!f) return;
-    if (!f.type.startsWith("video/")) return toast.error(t.err_file_type);
-    if (f.size > MAX_BYTES) return toast.error(t.err_file_size);
+    if (f.size > MAX_UPLOAD_BYTES) return toast.error(t.err_file_size);
     setValidating(true);
     setValidation(null);
     try {
@@ -195,6 +195,10 @@ function AppPage() {
         return;
       }
       setFile(f);
+      if (f.size > LOCAL_RENDER_MAX_BYTES) {
+        setCloud(true);
+        toast.info(t.auto_cloud_enabled);
+      }
       if (!name) setName(f.name.replace(/\.[^.]+$/, ""));
       if (targetResume && fingerprintFile(f) === targetResume.fingerprint) {
         setResume(targetResume);
@@ -237,15 +241,18 @@ function AppPage() {
     controllerRef.current?.cancel();
   };
 
+  const fileRequiresCloud = !!file && file.size > LOCAL_RENDER_MAX_BYTES;
+  const effectiveCloudForUi = cloud || fileRequiresCloud;
+
   const estimate = useMemo(
     () =>
       estimateCredits({
-        cloud,
+        cloud: effectiveCloudForUi,
         fileSizeBytes: file?.size ?? 0,
         estimatedDurationSec: resume?.totalDuration,
         exportOpts,
       }),
-    [cloud, file, resume, exportOpts],
+    [effectiveCloudForUi, file, resume, exportOpts],
   );
 
   const persistResume = (
@@ -296,6 +303,9 @@ function AppPage() {
       cursor = end;
     }
     if (cursor < totalDuration) keeps.push({ start: cursor, end: totalDuration });
+    if (keeps.length === 0) {
+      throw new Error("No audible content detected. Try lowering the silence threshold.");
+    }
 
     const submitArgs = {
       sourceUrl: signed.signedUrl,
@@ -378,6 +388,9 @@ function AppPage() {
 
   const handleProcess = async () => {
     if (!file) return toast.error(t.err_no_file);
+    const forceCloud = file.size > LOCAL_RENDER_MAX_BYTES;
+    const effectiveCloud = cloud || forceCloud;
+    if (forceCloud && !cloud) setCloud(true);
     setBusy(true);
     setProgress(0);
     setActualCredits(null);
@@ -387,7 +400,7 @@ function AppPage() {
     appendLog({
       level: "info",
       step: "system",
-      message: `attempt #${attemptsRef.current} · ${cloud ? "cloud" : "local"} · ${file.name}`,
+      message: `attempt #${attemptsRef.current} · ${effectiveCloud ? "cloud" : "local"} · ${file.name}`,
     });
 
     const controller = createController();
@@ -410,7 +423,7 @@ function AppPage() {
           user_id: userId,
           name: name || file.name,
           status: "processing",
-          settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, exportOpts, cloud },
+          settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, exportOpts, cloud: effectiveCloud },
         })
         .select()
         .single();
@@ -452,13 +465,14 @@ function AppPage() {
       let finalDuration: number;
       let detected: SilenceRange[];
 
-      if (cloud) {
-        // For cloud rendering we still need silence detection — do it locally
-        // (fast) unless we already have cached silences from a previous run.
+      if (effectiveCloud) {
+        // For cloud rendering we only run silence detection locally, then let
+        // Shotstack render the final file. This avoids the previous full local
+        // FFmpeg render before cloud, which could crash on larger uploads.
         let silences = resume?.silences;
         let totalDuration = resume?.totalDuration;
         if (!silences || typeof totalDuration !== "number") {
-          const det = await processVideoRemoveSilence(file, {
+          const det = await detectSilencesOnly(file, {
             thresholdDb: threshold,
             minPauseSec: minPause,
             exportOptions: exportOpts,
@@ -476,16 +490,13 @@ function AppPage() {
               });
               persistResume(projectId!, file, {
                 silences,
-                totalDuration,
+                totalDuration: totalDuration || validation?.durationSec,
                 lastPhase: "detect",
               });
             },
           });
-          // We ran a full local render too because the API doesn't expose
-          // detection alone — keep the local output as fallback but ignore it
-          // when cloud succeeds.
           silences = det.silences;
-          totalDuration = det.originalDuration;
+          totalDuration = det.originalDuration || validation?.durationSec || 0;
         }
         detected = silences;
         originalDuration = totalDuration;
@@ -506,6 +517,9 @@ function AppPage() {
             totalDuration,
             lastPhase: "detect",
           });
+          if (file.size > LOCAL_RENDER_MAX_BYTES) {
+            throw new Error(`${t.cloud_status_failed}. ${t.large_file_cloud_only}`);
+          }
           const local = await processVideoRemoveSilence(file, {
             thresholdDb: threshold,
             minPauseSec: minPause,
@@ -567,7 +581,7 @@ function AppPage() {
         .upload(outPath, outputBlob, { upsert: true, contentType: outputMime });
       if (outErr) throw outErr;
 
-      const credits = cloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
+      const credits = effectiveCloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
       setActualCredits(credits);
       appendLog({
         level: "info",
@@ -582,7 +596,7 @@ function AppPage() {
         silenceCount: detected.length,
         silences: detected,
         credits,
-        cloud,
+        cloud: effectiveCloud,
       };
 
       await supabase
@@ -595,7 +609,7 @@ function AppPage() {
         project_id: projectId,
         user_id: userId,
         label: versionLabel,
-        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, cloud },
+        settings: { removeSilence, enhanceAudio, colorGrade, threshold, minPause, cloud: effectiveCloud },
         export_options: exportOpts as unknown as Record<string, unknown>,
         output_path: outPath,
         stats: { ...stats, logs: logs.slice(-200), attempts: attemptsRef.current },
@@ -705,7 +719,7 @@ function AppPage() {
           {file ? (
             <div className="space-y-1">
               <p className="font-medium">{file.name}</p>
-              <p className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+              <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
             </div>
           ) : (
             <div className="space-y-1 text-muted-foreground">
@@ -775,7 +789,13 @@ function AppPage() {
           )}
         </section>
 
-        <CloudPanel t={t} cloud={cloud} onChange={setCloud} env={CLOUD_ENV} />
+        <CloudPanel
+          t={t}
+          cloud={effectiveCloudForUi}
+          onChange={setCloud}
+          env={CLOUD_ENV}
+          locked={fileRequiresCloud}
+        />
 
         {validation && <ValidationPanel t={t} v={validation} />}
 
@@ -788,7 +808,7 @@ function AppPage() {
           actual={actualCredits}
           explanation={explainCredits(
             {
-              cloud,
+              cloud: effectiveCloudForUi,
               resolution: exportOpts.resolution,
               estimatedDurationSec: resume?.totalDuration,
               fileSizeBytes: file?.size,
@@ -888,7 +908,7 @@ function ResumePanel({
           </div>
           <p className="mt-2 text-sm text-foreground">{state.projectName}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {state.fileName} · {(state.fileSize / 1024 / 1024).toFixed(1)} MB · {state.lastPhase}
+            {state.fileName} · {formatFileSize(state.fileSize)} · {state.lastPhase}
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
             {matched ? t.resume_match : t.resume_no_match}
@@ -913,11 +933,13 @@ function CloudPanel({
   cloud,
   onChange,
   env,
+  locked,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   cloud: boolean;
   onChange: (v: boolean) => void;
   env: "sandbox" | "production";
+  locked?: boolean;
 }) {
   return (
     <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
@@ -929,9 +951,9 @@ function CloudPanel({
               {env === "production" ? t.cloud_env_prod : t.cloud_env_dev}
             </span>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{t.cloud_desc}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{locked ? t.large_file_cloud_only : t.cloud_desc}</p>
         </div>
-        <Switch checked={cloud} onCheckedChange={onChange} />
+        <Switch checked={cloud} onCheckedChange={onChange} disabled={locked} />
       </div>
     </section>
   );

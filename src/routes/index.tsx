@@ -350,9 +350,13 @@ function CtaStrip({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
     <section className="py-32">
       <div className="mx-auto max-w-4xl px-6">
         <div className="relative overflow-hidden rounded-[40px] border border-border/80 bg-gradient-to-b from-card/80 to-transparent p-12 text-center md:p-20">
-          <span
+          <motion.span
             aria-hidden
-            className="absolute left-1/2 top-0 h-[3px] w-64 -translate-x-1/2 bg-primary"
+            initial={{ width: 0 }}
+            whileInView={{ width: "16rem" }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.9, ease: "easeOut" }}
+            className="absolute left-1/2 top-0 h-[3px] -translate-x-1/2 bg-primary"
           />
           <h2 className="mx-auto max-w-2xl font-display text-4xl font-bold tracking-tight md:text-6xl">
             {t.hero_title}

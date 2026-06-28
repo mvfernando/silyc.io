@@ -1382,6 +1382,10 @@ function ErrorBanner({
   error: MappedError;
   onDismiss: () => void;
 }) {
+  const scrollToLogs = () => {
+    const el = document.getElementById("job-logs");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
     <div className="mt-6 rounded-xl border border-destructive/40 bg-destructive/10 p-5">
       <div className="flex items-start justify-between gap-4">
@@ -1389,6 +1393,12 @@ function ErrorBanner({
           <div className="text-[11px] uppercase tracking-[0.18em] text-destructive">
             {error.title}
           </div>
+          {error.jobId && (
+            <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 font-mono text-[11px] text-destructive">
+              <span className="uppercase tracking-wider text-[10px] opacity-80">{t.err_job_id}</span>
+              <span className="select-all">{error.jobId}</span>
+            </div>
+          )}
           <p className="mt-2 text-sm text-foreground">
             <span className="font-medium">{t.err_cause}: </span>
             {error.cause}
@@ -1397,6 +1407,11 @@ function ErrorBanner({
             <span className="font-medium">{t.err_action}: </span>
             {error.action}
           </p>
+          <div className="mt-3">
+            <Button type="button" variant="outline" size="sm" onClick={scrollToLogs}>
+              {t.err_view_logs}
+            </Button>
+          </div>
           <details className="mt-3 text-xs text-muted-foreground">
             <summary className="cursor-pointer select-none">{t.err_details}</summary>
             <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[11px]">{error.raw}</pre>

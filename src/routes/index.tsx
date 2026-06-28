@@ -6,9 +6,16 @@ import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { useInView, usePrefersReducedMotion } from "@/hooks/use-in-view";
 
-const HowItWorks = lazy(() =>
-  import("@/components/how-it-works").then((m) => ({ default: m.HowItWorks })),
-);
+const loadHowItWorks = () =>
+  import("@/components/how-it-works").then((m) => ({ default: m.HowItWorks }));
+const HowItWorks = lazy(loadHowItWorks);
+
+/** Sentinel that warms up the HowItWorks chunk before the user reaches it. */
+function HowItWorksPreloader() {
+  const { ref, inView } = useInView<HTMLDivElement>({ rootMargin: "800px 0px" });
+  if (inView) void loadHowItWorks();
+  return <div ref={ref} aria-hidden className="h-px w-full" />;
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -31,6 +38,7 @@ function Index() {
         <main>
           <Hero t={t} />
           <FeaturesBento t={t} />
+          <HowItWorksPreloader />
           <Suspense fallback={<div className="py-28" aria-hidden />}>
             <HowItWorks />
           </Suspense>

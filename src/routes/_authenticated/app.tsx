@@ -444,6 +444,7 @@ function AppPage() {
       silences: resume?.silences,
       totalDuration: resume?.totalDuration,
       lastPhase: "upload",
+      cloud: effectiveCloud,
     });
 
     const ext = file.name.split(".").pop() || "mp4";
@@ -463,6 +464,7 @@ function AppPage() {
       let outputExt: string;
       let originalDuration: number;
       let finalDuration: number;
+      let renderedInCloud = false;
       let detected: SilenceRange[];
 
       if (effectiveCloud) {
@@ -506,6 +508,7 @@ function AppPage() {
           outputMime = cr.mime;
           outputExt = cr.ext;
           finalDuration = cr.duration;
+          renderedInCloud = true;
         } catch (cloudErr) {
           if (cloudErr instanceof CancelledError) throw cloudErr;
           const msg = cloudErr instanceof Error ? cloudErr.message : String(cloudErr);
@@ -581,7 +584,7 @@ function AppPage() {
         .upload(outPath, outputBlob, { upsert: true, contentType: outputMime });
       if (outErr) throw outErr;
 
-      const credits = effectiveCloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
+      const credits = renderedInCloud ? actualCloudCredits(finalDuration, exportOpts) : 0;
       setActualCredits(credits);
       appendLog({
         level: "info",
@@ -596,7 +599,7 @@ function AppPage() {
         silenceCount: detected.length,
         silences: detected,
         credits,
-        cloud: effectiveCloud,
+        cloud: renderedInCloud,
       };
 
       await supabase

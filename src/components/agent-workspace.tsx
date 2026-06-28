@@ -724,6 +724,119 @@ function ReceiptCard({ label, value }: { label: string; value: string }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Audio panel — public line + expandable metrics                      */
+/* ------------------------------------------------------------------ */
+
+function AudioPanel({
+  t,
+  audio,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  audio: NonNullable<TaskResults["audio"]>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (audio.skipped) {
+    return (
+      <div className="mt-8 mx-auto max-w-2xl rounded-2xl border border-border/60 bg-muted/10 px-5 py-4 text-center">
+        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground/80">
+          {t.agent_audio_title}
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{t.agent_audio_skipped}</p>
+      </div>
+    );
+  }
+
+  const tierLabel =
+    audio.profileUsed === "cloud-denoise" ? t.agent_audio_tier_pro : t.agent_audio_tier_standard;
+
+  const fmtDb = (v: number | undefined) =>
+    v != null && isFinite(v) ? `${v.toFixed(1)} dB` : "—";
+  const fmtLufs = (v: number | undefined) =>
+    v != null && isFinite(v) ? `${v.toFixed(1)} LUFS` : "—";
+
+  return (
+    <div className="mt-8 mx-auto max-w-2xl">
+      <div className="rounded-2xl border border-border/60 bg-muted/10 overflow-hidden">
+        <div className="flex items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+              {t.agent_audio_title}
+            </p>
+            <p className="mt-1 text-sm text-foreground">
+              {t.agent_audio_optimized}
+              <span className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                {tierLabel}
+              </span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen((s) => !s)}
+            className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+          >
+            {open ? t.agent_audio_hide_metrics : t.agent_audio_show_metrics}
+          </button>
+        </div>
+
+        {audio.downgradedFromPro && (
+          <div className="border-t border-border/40 px-5 py-3 bg-amber-500/5">
+            <p className="text-xs text-amber-600 dark:text-amber-400/90">
+              {t.agent_audio_pro_hint}
+            </p>
+          </div>
+        )}
+
+        {open && (
+          <div className="border-t border-border/40 px-5 py-4 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+            <MetricRow label={t.agent_audio_profile_used} value={audio.profileUsed ?? "—"} />
+            <MetricRow
+              label={t.agent_audio_snr_before}
+              value={fmtDb(audio.snrBeforeDb)}
+            />
+            <MetricRow
+              label={t.agent_audio_snr_after}
+              value={fmtDb(audio.snrAfterDb)}
+            />
+            <MetricRow
+              label={t.agent_audio_noise_floor}
+              value={fmtDb(audio.noiseFloorBeforeDb)}
+            />
+            <MetricRow
+              label={t.agent_audio_lufs_before}
+              value={fmtLufs(audio.lufsBeforeDb)}
+            />
+            <MetricRow
+              label={t.agent_audio_lufs_after}
+              value={fmtLufs(audio.lufsAfterDb)}
+            />
+            {audio.fallbacks && audio.fallbacks.length > 0 && (
+              <div className="col-span-2 pt-2 border-t border-border/30">
+                <p className="text-[11px] uppercase tracking-[0.15em] text-muted-foreground/70">
+                  {t.agent_audio_fallback_label}
+                </p>
+                <ul className="mt-1 space-y-0.5 font-mono text-[11px] text-muted-foreground">
+                  {audio.fallbacks.map((f, i) => <li key={i}>{f}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetricRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono tabular-nums text-foreground">{value}</span>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Optional comment field — saved to pipeline_feedback.comment         */
 /* ------------------------------------------------------------------ */
 

@@ -242,13 +242,25 @@ export function AgentWorkspace() {
             onRate={(r) => {
               setRating(r);
               if (runIdRef.current) {
-                void saveFeedback({ runId: runIdRef.current, rating: r, format: detectFormatFromReceipt(receipt) });
+                void saveFeedback({
+                  runId: runIdRef.current,
+                  rating: r,
+                  format: detectFormatFromReceipt(receipt),
+                  audioProfileUsed: results?.audio?.profileUsed ?? null,
+                  audioSnrDb: results?.audio?.snrBeforeDb ?? null,
+                });
               }
             }}
             onAskRefine={() => setShowRefine(true)}
             onComment={(c) => {
               if (runIdRef.current) {
-                void saveFeedback({ runId: runIdRef.current, comment: c, format: detectFormatFromReceipt(receipt) });
+                void saveFeedback({
+                  runId: runIdRef.current,
+                  comment: c,
+                  format: detectFormatFromReceipt(receipt),
+                  audioProfileUsed: results?.audio?.profileUsed ?? null,
+                  audioSnrDb: results?.audio?.snrBeforeDb ?? null,
+                });
               }
             }}
             onRefine={(choice) => {

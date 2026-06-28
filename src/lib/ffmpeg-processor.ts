@@ -1,5 +1,5 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import coreURL from "@ffmpeg/core/dist/esm/ffmpeg-core.js?url";
+import coreURL from "@/assets/ffmpeg/ffmpeg-core.js?url";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
 let ffmpegInstance: FFmpeg | null = null;

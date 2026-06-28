@@ -1,9 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { motion } from "motion/react";
+import { motion, MotionConfig } from "motion/react";
+import { lazy, Suspense } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
-import { HowItWorks } from "@/components/how-it-works";
+import { useInView, usePrefersReducedMotion } from "@/hooks/use-in-view";
+
+const HowItWorks = lazy(() =>
+  import("@/components/how-it-works").then((m) => ({ default: m.HowItWorks })),
+);
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,32 +25,39 @@ export const Route = createFileRoute("/")({
 function Index() {
   const { t } = useI18n();
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30">
-      <SiteHeader />
-      <main>
-        <Hero t={t} />
-        <FeaturesBento t={t} />
-        <HowItWorks />
-        <Impact t={t} />
-        <CtaStrip t={t} />
-      </main>
-      <footer className="border-t border-border/60 py-10 text-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-        © {new Date().getFullYear()} · {t.footer}
-      </footer>
-    </div>
+    <MotionConfig reducedMotion="user">
+      <div className="min-h-screen bg-background text-foreground selection:bg-primary/30">
+        <SiteHeader />
+        <main>
+          <Hero t={t} />
+          <FeaturesBento t={t} />
+          <Suspense fallback={<div className="py-28" aria-hidden />}>
+            <HowItWorks />
+          </Suspense>
+          <Impact t={t} />
+          <CtaStrip t={t} />
+        </main>
+        <footer className="border-t border-border/60 py-10 text-center text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          © {new Date().getFullYear()} · {t.footer}
+        </footer>
+      </div>
+    </MotionConfig>
   );
 }
 
 function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
+  const { ref, inView } = useInView<HTMLDivElement>({ rootMargin: "0px" });
+  const reduced = usePrefersReducedMotion();
+  const play = inView && !reduced;
   return (
-    <section className="relative overflow-hidden">
+    <section ref={ref} className="relative overflow-hidden">
       {/* Ember glow */}
       <motion.div
         aria-hidden
-        animate={{ opacity: [0.45, 0.7, 0.45], scale: [1, 1.06, 1] }}
-        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+        animate={play ? { opacity: [0.45, 0.7, 0.45], scale: [1, 1.06, 1] } : { opacity: 0.5, scale: 1 }}
+        transition={play ? { duration: 7, repeat: Infinity, ease: "easeInOut" } : { duration: 0.4 }}
+        style={{ background: "color-mix(in oklab, var(--color-primary) 22%, transparent)", willChange: "transform, opacity" }}
         className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[840px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[140px]"
-        style={{ background: "color-mix(in oklab, var(--color-primary) 22%, transparent)" }}
       />
       <div className="relative mx-auto flex min-h-[88vh] max-w-6xl flex-col items-center justify-center px-6 py-28 text-center">
         <motion.div

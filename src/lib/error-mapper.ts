@@ -5,6 +5,7 @@ export type MappedError = {
   cause: string;
   action: string;
   raw: string;
+  jobId?: string;
 };
 
 function pick(lang: Lang, pt: string, en: string): string {

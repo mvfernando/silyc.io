@@ -70,6 +70,23 @@ const PHASE_TO_STEP: Record<ProgressEvent["phase"], StepKey> = {
 const CLOUD_ENV: "sandbox" | "production" =
   import.meta.env.MODE === "production" ? "production" : "sandbox";
 
+const RES_LADDER: ExportOptions["resolution"][] = ["2160", "1440", "1080", "720", "480"];
+function downgradeResolution(r: ExportOptions["resolution"]): ExportOptions["resolution"] {
+  // "source" → step down to 1080 as a safe target
+  if (r === "source") return "1080";
+  const i = RES_LADDER.indexOf(r);
+  if (i < 0 || i === RES_LADDER.length - 1) return r;
+  return RES_LADDER[i + 1];
+}
+function halveBitrate(br: string | undefined): string | undefined {
+  if (!br) return br;
+  const m = br.match(/^(\d+(?:\.\d+)?)\s*([Mk])$/);
+  if (!m) return br;
+  const v = parseFloat(m[1]) * 0.6;
+  const rounded = v < 1 && m[2] === "M" ? `${Math.max(500, Math.round(v * 1000))}k` : `${Number(v.toFixed(2))}${m[2]}`;
+  return rounded;
+}
+
 function AppPage() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
@@ -101,6 +118,7 @@ function AppPage() {
   const attemptsRef = useRef<number>(0);
   const lastPhaseRef = useRef<typeof phase>("idle");
   const [lastError, setLastError] = useState<MappedError | null>(null);
+  const cloudJobIdRef = useRef<string | null>(null);
 
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);
@@ -306,82 +324,111 @@ function AppPage() {
       throw new Error("No audible content detected. Try lowering the silence threshold.");
     }
 
-    const submitArgs = {
-      sourceUrl: signed.signedUrl,
-      keeps,
-      resolution: exportOpts.resolution,
-      format: exportOpts.container,
-      fps: exportOpts.fps,
-    };
-    const { id } = await withBackoff(
-      (n) => {
-        appendLog({ level: "info", step: "export", message: `cloud submit · ${t.retry_attempt} ${n}` });
-        return submitCloud({ data: submitArgs });
-      },
-      {
-        attempts: 3,
-        isRetriable: isTransientCloudError,
-        signal: () => !!controllerRef.current?.isCancelled(),
-        onAttempt: ({ attempt, delayMs, error }) => {
-          if (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            appendLog({
-              level: "warn",
-              step: "export",
-              message: `cloud submit failed (#${attempt}): ${msg}${delayMs ? ` · ${t.retry_waiting} ${Math.round(delayMs / 1000)}s` : ""}`,
-            });
-          }
+    const submitAndPoll = async (
+      resolution: ExportOptions["resolution"],
+      videoBitrate: string | undefined,
+      tag: string,
+    ) => {
+      const submitArgs = {
+        sourceUrl: signed.signedUrl,
+        keeps,
+        resolution,
+        format: exportOpts.container,
+        fps: exportOpts.fps,
+      };
+      const { id } = await withBackoff(
+        (n) => {
+          appendLog({ level: "info", step: "export", message: `cloud submit (${tag}) · ${t.retry_attempt} ${n}` });
+          return submitCloud({ data: submitArgs });
         },
-      },
-    );
-    appendLog({ level: "info", step: "export", message: `cloud render submitted (id ${id})` });
+        {
+          attempts: 3,
+          isRetriable: isTransientCloudError,
+          signal: () => !!controllerRef.current?.isCancelled(),
+          onAttempt: ({ attempt, delayMs, error }) => {
+            if (error) {
+              const msg = error instanceof Error ? error.message : String(error);
+              appendLog({
+                level: "warn",
+                step: "export",
+                message: `cloud submit failed (#${attempt}): ${msg}${delayMs ? ` · ${t.retry_waiting} ${Math.round(delayMs / 1000)}s` : ""}`,
+              });
+            }
+          },
+        },
+      );
+      cloudJobIdRef.current = id;
+      appendLog({
+        level: "info",
+        step: "export",
+        message: `cloud render submitted (id ${id}) · ${resolution}${videoBitrate ? ` @ ${videoBitrate}` : ""}`,
+      });
 
-    // Poll
-    let url: string | undefined;
-    let duration = 0;
-    const startedAt = Date.now();
-    let pollFailures = 0;
-    for (let i = 0; i < 400; i++) {
-      if (controllerRef.current?.isCancelled()) throw new CancelledError();
-      if (Date.now() - startedAt > CLOUD_TIMEOUT_MS) {
-        throw new Error(t.cloud_timeout);
+      let url: string | undefined;
+      let duration = 0;
+      const startedAt = Date.now();
+      let pollFailures = 0;
+      for (let i = 0; i < 400; i++) {
+        if (controllerRef.current?.isCancelled()) throw new CancelledError();
+        if (Date.now() - startedAt > CLOUD_TIMEOUT_MS) {
+          throw new Error(`${t.cloud_timeout} (job ${id})`);
+        }
+        await new Promise((r) => setTimeout(r, 3000));
+        let r: Awaited<ReturnType<typeof pollCloud>>;
+        try {
+          r = await pollCloud({ data: { id } });
+          pollFailures = 0;
+        } catch (pollErr) {
+          pollFailures += 1;
+          const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+          appendLog({
+            level: "warn",
+            step: "export",
+            message: `cloud poll failed (#${pollFailures}): ${msg}`,
+          });
+          if (pollFailures >= 4 || !isTransientCloudError(pollErr)) throw pollErr;
+          await new Promise((res) => setTimeout(res, Math.min(15_000, 1500 * 2 ** (pollFailures - 1))));
+          continue;
+        }
+        setProgress(Math.min(95, 20 + i * 4));
+        if (r.status === "done" && r.url) {
+          url = r.url;
+          duration = r.duration ?? 0;
+          break;
+        }
+        if (r.status === "failed") throw new Error(`${r.error ?? t.cloud_status_failed} (job ${id})`);
       }
-      await new Promise((r) => setTimeout(r, 3000));
-      let r: Awaited<ReturnType<typeof pollCloud>>;
-      try {
-        r = await pollCloud({ data: { id } });
-        pollFailures = 0;
-      } catch (pollErr) {
-        pollFailures += 1;
-        const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
-        appendLog({
-          level: "warn",
-          step: "export",
-          message: `cloud poll failed (#${pollFailures}): ${msg}`,
-        });
-        if (pollFailures >= 4 || !isTransientCloudError(pollErr)) throw pollErr;
-        // exponential backoff between consecutive failed polls
-        await new Promise((res) => setTimeout(res, Math.min(15_000, 1500 * 2 ** (pollFailures - 1))));
-        continue;
-      }
-      setProgress(Math.min(95, 20 + i * 4));
-      if (r.status === "done" && r.url) {
-        url = r.url;
-        duration = r.duration ?? 0;
-        break;
-      }
-      if (r.status === "failed") throw new Error(r.error ?? t.cloud_status_failed);
+      if (!url) throw new Error(`${t.cloud_status_failed} (job ${id})`);
+      return { url, duration };
+    };
+
+    let attemptResult: { url: string; duration: number };
+    try {
+      attemptResult = await submitAndPoll(exportOpts.resolution, exportOpts.videoBitrate, "primary");
+    } catch (firstErr) {
+      if (firstErr instanceof CancelledError || controllerRef.current?.isCancelled()) throw firstErr;
+      const downgraded = downgradeResolution(exportOpts.resolution);
+      const lowerBitrate = halveBitrate(exportOpts.videoBitrate);
+      const canDowngrade = downgraded !== exportOpts.resolution || lowerBitrate !== exportOpts.videoBitrate;
+      if (!canDowngrade) throw firstErr;
+      const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+      appendLog({
+        level: "warn",
+        step: "export",
+        message: `${t.cloud_downgrade_msg} (${exportOpts.resolution} → ${downgraded}${lowerBitrate ? `, ${lowerBitrate}` : ""}) · ${msg}`,
+      });
+      toast.message(t.cloud_downgrade_title, { description: t.cloud_downgrade_msg });
+      attemptResult = await submitAndPoll(downgraded, lowerBitrate, "downgrade");
     }
-    if (!url) throw new Error(t.cloud_status_failed);
 
-    const blobRes = await fetch(url);
+    const blobRes = await fetch(attemptResult.url);
     const blob = await blobRes.blob();
     setProgress(100);
     return {
       blob,
       mime: blob.type || "video/mp4",
       ext: exportOpts.container,
-      duration: duration || totalDuration,
+      duration: attemptResult.duration || totalDuration,
     };
   };
 
@@ -395,6 +442,7 @@ function AppPage() {
     setActualCredits(null);
     markPhase("load");
     setPaused(false);
+    cloudJobIdRef.current = null;
     attemptsRef.current += 1;
     appendLog({
       level: "info",
@@ -658,7 +706,10 @@ function AppPage() {
         await qc.invalidateQueries({ queryKey: ["project", projectId!] });
         const mapped = mapError(err, lang);
         appendLog({ level: "error", step: "system", message: `${mapped.title} — ${mapped.raw}` });
-        setLastError(mapped);
+        const withJob: MappedError = cloudJobIdRef.current
+          ? { ...mapped, jobId: cloudJobIdRef.current }
+          : mapped;
+        setLastError(withJob);
         toast.error(mapped.title, { description: mapped.action });
       }
       setBusy(false);
@@ -1206,7 +1257,7 @@ function JobLogsPanel({
     <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <h2 id="job-logs" className="scroll-mt-24 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             {t.logs_title}
           </h2>
           <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1331,6 +1382,10 @@ function ErrorBanner({
   error: MappedError;
   onDismiss: () => void;
 }) {
+  const scrollToLogs = () => {
+    const el = document.getElementById("job-logs");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
     <div className="mt-6 rounded-xl border border-destructive/40 bg-destructive/10 p-5">
       <div className="flex items-start justify-between gap-4">
@@ -1338,6 +1393,12 @@ function ErrorBanner({
           <div className="text-[11px] uppercase tracking-[0.18em] text-destructive">
             {error.title}
           </div>
+          {error.jobId && (
+            <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 font-mono text-[11px] text-destructive">
+              <span className="uppercase tracking-wider text-[10px] opacity-80">{t.err_job_id}</span>
+              <span className="select-all">{error.jobId}</span>
+            </div>
+          )}
           <p className="mt-2 text-sm text-foreground">
             <span className="font-medium">{t.err_cause}: </span>
             {error.cause}
@@ -1346,6 +1407,11 @@ function ErrorBanner({
             <span className="font-medium">{t.err_action}: </span>
             {error.action}
           </p>
+          <div className="mt-3">
+            <Button type="button" variant="outline" size="sm" onClick={scrollToLogs}>
+              {t.err_view_logs}
+            </Button>
+          </div>
           <details className="mt-3 text-xs text-muted-foreground">
             <summary className="cursor-pointer select-none">{t.err_details}</summary>
             <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[11px]">{error.raw}</pre>

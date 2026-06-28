@@ -444,8 +444,14 @@ export async function extractAudioForTranscription(
       outputName,
     ]);
     const data = await ffmpeg.readFile(outputName);
-    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
-    return new Blob([bytes], { type: "audio/mpeg" });
+    const buf =
+      typeof data === "string"
+        ? new TextEncoder().encode(data).buffer
+        : (data.buffer.slice(
+            data.byteOffset,
+            data.byteOffset + data.byteLength,
+          ) as ArrayBuffer);
+    return new Blob([buf], { type: "audio/mpeg" });
   } finally {
     try {
       await ffmpeg.deleteFile(inputName);

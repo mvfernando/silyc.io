@@ -626,6 +626,9 @@ function ReadyStage({
         )}
       </div>
 
+      {/* History — past reactions & refinement choices per run_id */}
+      <FeedbackHistorySection t={t} rating={rating} />
+
       {/* Refine — goals, not sliders */}
       <AnimatePresence>
         {showRefine && (

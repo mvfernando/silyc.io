@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { SiteHeader } from "@/components/site-header";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
+import { HowItWorks } from "@/components/how-it-works";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,6 +25,7 @@ function Index() {
       <main>
         <Hero t={t} />
         <FeaturesBento t={t} />
+        <HowItWorks />
         <Impact t={t} />
         <CtaStrip t={t} />
       </main>
@@ -38,9 +40,11 @@ function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
   return (
     <section className="relative overflow-hidden">
       {/* Ember glow */}
-      <div
+      <motion.div
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[840px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-60 blur-[140px]"
+        animate={{ opacity: [0.45, 0.7, 0.45], scale: [1, 1.06, 1] }}
+        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[840px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[140px]"
         style={{ background: "color-mix(in oklab, var(--color-primary) 22%, transparent)" }}
       />
       <div className="relative mx-auto flex min-h-[88vh] max-w-6xl flex-col items-center justify-center px-6 py-28 text-center">
@@ -101,11 +105,14 @@ function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
       {/* Waveform line */}
       <div className="pointer-events-none absolute bottom-0 left-0 w-full opacity-30">
         <svg viewBox="0 0 1440 320" className="h-32 w-full md:h-40">
-          <path
+          <motion.path
             fill="none"
             stroke="var(--color-primary)"
             strokeWidth="1.5"
             d="M0,160 C120,200 240,120 360,160 C480,200 600,240 720,160 C840,80 960,120 1080,160 C1200,200 1320,240 1440,160"
+            initial={{ pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: 1 }}
+            transition={{ duration: 2.4, ease: "easeInOut", delay: 0.4 }}
           />
         </svg>
       </div>
@@ -308,11 +315,23 @@ function ImpactVisual() {
         <div className="grid w-full grid-cols-12 items-end gap-1">
           {cols.map((h, i) => {
             const after = i >= 6;
+            const targetH = `${(h / 56) * 60}%`;
             return (
-              <span
+              <motion.span
                 key={i}
-                className={after ? "rounded-sm bg-primary" : "rounded-sm bg-muted-foreground/30"}
-                style={{ height: `${(h / 56) * 60}%`, minHeight: 6 }}
+                initial={{ height: after ? "6px" : targetH, opacity: 0.4 }}
+                whileInView={{
+                  height: after ? targetH : "6px",
+                  opacity: 1,
+                }}
+                viewport={{ once: true, margin: "-80px" }}
+                transition={{
+                  duration: 0.6,
+                  delay: after ? 0.6 + (i - 6) * 0.08 : i * 0.08,
+                  ease: "easeOut",
+                }}
+                className={`rounded-sm ${after ? "bg-primary" : "bg-muted-foreground/30"}`}
+                style={{ minHeight: 6 }}
               />
             );
           })}
@@ -331,9 +350,13 @@ function CtaStrip({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
     <section className="py-32">
       <div className="mx-auto max-w-4xl px-6">
         <div className="relative overflow-hidden rounded-[40px] border border-border/80 bg-gradient-to-b from-card/80 to-transparent p-12 text-center md:p-20">
-          <span
+          <motion.span
             aria-hidden
-            className="absolute left-1/2 top-0 h-[3px] w-64 -translate-x-1/2 bg-primary"
+            initial={{ width: 0 }}
+            whileInView={{ width: "16rem" }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.9, ease: "easeOut" }}
+            className="absolute left-1/2 top-0 h-[3px] -translate-x-1/2 bg-primary"
           />
           <h2 className="mx-auto max-w-2xl font-display text-4xl font-bold tracking-tight md:text-6xl">
             {t.hero_title}

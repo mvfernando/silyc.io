@@ -1263,10 +1263,14 @@ function StepIndicator({
   active,
   completed,
   t,
+  phaseProgress = 0,
+  paused = false,
 }: {
   active: StepKey | null;
   completed?: ResumeStepKey[];
   t: ReturnType<typeof useI18n>["t"];
+  phaseProgress?: number;
+  paused?: boolean;
 }) {
   const steps: { key: StepKey; label: string }[] = [
     { key: "silences", label: t.step_silences },
@@ -1277,24 +1281,42 @@ function StepIndicator({
   const idx = active ? steps.findIndex((s) => s.key === active) : -1;
   const completedSet = new Set<string>(completed ?? []);
   return (
-    <ol className="flex items-center gap-3 text-xs">
+    <ol className="flex items-stretch gap-3 text-xs">
       {steps.map((s, i) => {
         const done = i < idx || completedSet.has(s.key);
         const current = i === idx;
+        const fillPct = current ? Math.max(0, Math.min(100, phaseProgress)) : done ? 100 : 0;
         return (
-          <li key={s.key} className="flex flex-1 items-center gap-3">
-            <span
-              className={[
-                "grid h-6 w-6 place-items-center rounded-full border text-[11px] font-medium tabular-nums",
-                done && "border-primary/40 bg-primary/15 text-primary",
-                current && "border-primary bg-primary text-primary-foreground",
-                !done && !current && "border-border/80 text-muted-foreground",
-              ].filter(Boolean).join(" ")}
-            >
-              {i + 1}
-            </span>
-            <span className={current ? "text-foreground" : "text-muted-foreground"}>{s.label}</span>
-            {i < steps.length - 1 && <span className="flex-1 border-t border-border/60" />}
+          <li key={s.key} className="flex flex-1 flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span
+                className={[
+                  "grid h-6 w-6 shrink-0 place-items-center rounded-full border text-[11px] font-medium tabular-nums transition-colors",
+                  done && "border-primary/40 bg-primary/15 text-primary",
+                  current && "border-primary bg-primary text-primary-foreground",
+                  !done && !current && "border-border/80 text-muted-foreground",
+                ].filter(Boolean).join(" ")}
+              >
+                {done ? "✓" : i + 1}
+              </span>
+              <span
+                className={[
+                  "truncate",
+                  current ? "text-foreground" : done ? "text-foreground/80" : "text-muted-foreground",
+                ].join(" ")}
+              >
+                {s.label}
+              </span>
+            </div>
+            <div className="relative h-1 overflow-hidden rounded-full bg-border/60">
+              <div
+                className={[
+                  "h-full rounded-full bg-primary transition-[width] duration-300 ease-out",
+                  current && !paused && "animate-pulse",
+                ].filter(Boolean).join(" ")}
+                style={{ width: `${fillPct}%` }}
+              />
+            </div>
           </li>
         );
       })}

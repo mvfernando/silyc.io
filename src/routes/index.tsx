@@ -40,9 +40,11 @@ function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
   return (
     <section className="relative overflow-hidden">
       {/* Ember glow */}
-      <div
+      <motion.div
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[840px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-60 blur-[140px]"
+        animate={{ opacity: [0.45, 0.7, 0.45], scale: [1, 1.06, 1] }}
+        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[840px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[140px]"
         style={{ background: "color-mix(in oklab, var(--color-primary) 22%, transparent)" }}
       />
       <div className="relative mx-auto flex min-h-[88vh] max-w-6xl flex-col items-center justify-center px-6 py-28 text-center">
@@ -103,11 +105,14 @@ function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
       {/* Waveform line */}
       <div className="pointer-events-none absolute bottom-0 left-0 w-full opacity-30">
         <svg viewBox="0 0 1440 320" className="h-32 w-full md:h-40">
-          <path
+          <motion.path
             fill="none"
             stroke="var(--color-primary)"
             strokeWidth="1.5"
             d="M0,160 C120,200 240,120 360,160 C480,200 600,240 720,160 C840,80 960,120 1080,160 C1200,200 1320,240 1440,160"
+            initial={{ pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: 1 }}
+            transition={{ duration: 2.4, ease: "easeInOut", delay: 0.4 }}
           />
         </svg>
       </div>

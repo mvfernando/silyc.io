@@ -70,6 +70,23 @@ const PHASE_TO_STEP: Record<ProgressEvent["phase"], StepKey> = {
 const CLOUD_ENV: "sandbox" | "production" =
   import.meta.env.MODE === "production" ? "production" : "sandbox";
 
+const RES_LADDER: ExportOptions["resolution"][] = ["2160", "1440", "1080", "720", "480"];
+function downgradeResolution(r: ExportOptions["resolution"]): ExportOptions["resolution"] {
+  // "source" → step down to 1080 as a safe target
+  if (r === "source") return "1080";
+  const i = RES_LADDER.indexOf(r);
+  if (i < 0 || i === RES_LADDER.length - 1) return r;
+  return RES_LADDER[i + 1];
+}
+function halveBitrate(br: string | undefined): string | undefined {
+  if (!br) return br;
+  const m = br.match(/^(\d+(?:\.\d+)?)\s*([Mk])$/);
+  if (!m) return br;
+  const v = parseFloat(m[1]) * 0.6;
+  const rounded = v < 1 && m[2] === "M" ? `${Math.max(500, Math.round(v * 1000))}k` : `${Number(v.toFixed(2))}${m[2]}`;
+  return rounded;
+}
+
 function AppPage() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();

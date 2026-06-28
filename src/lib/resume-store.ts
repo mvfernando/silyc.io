@@ -19,7 +19,11 @@ export type ResumeState = {
   settings: {
     threshold: number;
     minPause: number;
+    padding?: number;
     removeSilence: boolean;
+    enhanceAudio?: boolean;
+    colorGrade?: boolean;
+    cloud?: boolean;
   };
   exportOpts: ExportOptions;
   silences?: SilenceRange[];

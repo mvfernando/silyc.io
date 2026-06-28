@@ -280,6 +280,7 @@ const dict = {
     opt_color_d: "Applies a cinematic look while preserving skin tones.",
     opt_threshold: "Silence threshold",
     opt_min_pause: "Minimum pause",
+    opt_padding: "Padding around speech",
     process: "Process video",
     processing: "Processing…",
     proj_title: "Your projects",

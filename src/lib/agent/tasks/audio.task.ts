@@ -8,9 +8,9 @@
  *        SNR > 20 dB        → ffmpeg-light
  *        SNR 10..20 dB      → ffmpeg-aggressive
  *        SNR < 10 dB        → cloud-denoise (pro) or ffmpeg-aggressive (standard)
- *   3. Run the chosen pipeline. cloud-denoise tries Replicate; on failure
- *      degrades to ffmpeg-aggressive. The fal.ai fallback rung is
- *      planned but not wired in this release (Replicate covers it today).
+ *   3. Run the chosen pipeline. cloud-denoise runs the orchestrator
+ *      (Replicate → fal.ai); if every provider fails it degrades to
+ *      ffmpeg-aggressive locally and records the chain in `fallbacks`.
  *   4. Re-measure SNR/LUFS on the output for the receipt.
  *
  * The task replaces results.render.outputBlob / outputUrl with the
@@ -20,10 +20,19 @@
 import {
   analyzeAudio,
   applyAudioMaster,
+  extractAudioForTranscription,
   type AudioMetrics,
   type SpeechWindow,
 } from "@/lib/ffmpeg-processor";
 import type { AgentInput, TaskParams, TaskResults } from "../types";
+import {
+  runCloudDenoise,
+  defaultDenoiseProviders,
+  CloudDenoiseAllFailed,
+  type CloudDenoiseResult,
+  type DenoiseProvider,
+} from "../cloud-denoise";
+import { supabase } from "@/integrations/supabase/client";
 
 export type AudioCtx = {
   params: TaskParams["audio"];
@@ -35,6 +44,17 @@ export type AudioCtx = {
   onLog: (msg: string) => void;
   isCancelled: () => boolean;
   waitWhilePaused: () => Promise<void>;
+  /**
+   * Override the cloud-denoise step. Defaults to the production pipeline
+   * (extract audio → upload to Supabase Storage → Replicate → fal.ai →
+   * download enhanced audio). Tests inject a stub to simulate failures.
+   */
+  cloudDenoise?: (audioFile: File) => Promise<{
+    enhancedAudio: Blob;
+    result: CloudDenoiseResult;
+  }>;
+  /** Inject providers for the default pipeline (used by integration tests). */
+  cloudDenoiseProviders?: DenoiseProvider[];
 };
 
 /** Pick an audio profile from measured SNR + tier. */
@@ -60,6 +80,40 @@ async function urlToFile(url: string, name: string): Promise<File> {
 
 function blobToFile(blob: Blob, name: string): File {
   return new File([blob], name, { type: blob.type || "video/mp4" });
+}
+/** Upload a small audio blob to the `videos` bucket and return a signed URL. */
+async function uploadAudioForDenoise(blob: Blob, userId: string | null): Promise<string> {
+  const path = `denoise-tmp/${userId ?? "anon"}/${crypto.randomUUID()}.mp3`;
+  const { error } = await supabase.storage.from("videos").upload(path, blob, {
+    contentType: "audio/mpeg",
+    upsert: false,
+  });
+  if (error) throw new Error(`upload failed: ${error.message}`);
+  const { data, error: signErr } = await supabase.storage.from("videos").createSignedUrl(path, 1800);
+  if (signErr || !data?.signedUrl) throw new Error(`sign failed: ${signErr?.message ?? "no url"}`);
+  return data.signedUrl;
+}
+
+/**
+ * Default cloud-denoise pipeline. Extracts audio with ffmpeg.wasm, uploads
+ * to Supabase storage so providers can fetch it, runs the orchestrator,
+ * then downloads the enhanced audio blob.
+ */
+function makeDefaultCloudDenoise(
+  input: AgentInput,
+  providers: DenoiseProvider[],
+  onLog: (msg: string) => void,
+) {
+  return async (audioFile: File) => {
+    onLog("cloud-denoise: extracting audio");
+    const audioMp3 = await extractAudioForTranscription(audioFile);
+    onLog("cloud-denoise: uploading audio for providers");
+    const audioUrl = await uploadAudioForDenoise(audioMp3, input.userId);
+    const result = await runCloudDenoise(audioUrl, providers, onLog);
+    const fetched = await fetch(result.enhancedAudioUrl);
+    if (!fetched.ok) throw new Error(`download enhanced audio: ${fetched.status}`);
+    return { enhancedAudio: await fetched.blob(), result };
+  };
 }
 
 export async function runAudioTask(
@@ -129,12 +183,33 @@ export async function runAudioTask(
   ctx.onLog(`profile: ${profile}${decision.downgraded ? " (downgraded from cloud-denoise; tier=standard)" : ""}`);
 
   // 4. Run the chosen pipeline.
-  //    Cloud-denoise is gated for Pro and not wired in this release —
-  //    treat it as planned-but-fallback to ffmpeg-aggressive.
+  //    For cloud-denoise: orchestrator → on success, mux enhanced audio
+  //    over the video via ffmpeg-light master. On any failure across
+  //    providers, record the chain and degrade to ffmpeg-aggressive.
+  let enhancedAudio: Blob | undefined;
   if (profile === "cloud-denoise") {
-    ctx.onLog("cloud-denoise not yet wired; falling back to ffmpeg-aggressive");
-    fallbacks.push("cloud-denoise→ffmpeg-aggressive");
-    profile = "ffmpeg-aggressive";
+    const denoise =
+      ctx.cloudDenoise ??
+      makeDefaultCloudDenoise(input, ctx.cloudDenoiseProviders ?? defaultDenoiseProviders(), ctx.onLog);
+    try {
+      const cloud = await denoise(workFile);
+      enhancedAudio = cloud.enhancedAudio;
+      for (const a of cloud.result.attempts) {
+        if (a.ok) fallbacks.push(`cloud-denoise:${a.provider}-ok`);
+        else fallbacks.push(`cloud-denoise:${a.provider}-failed`);
+      }
+      ctx.onLog(`cloud-denoise: used ${cloud.result.providerUsed}; mastering with enhanced audio`);
+      profile = "ffmpeg-light";
+    } catch (err) {
+      if (err instanceof CloudDenoiseAllFailed) {
+        for (const a of err.attempts) fallbacks.push(`cloud-denoise:${a.provider}-failed`);
+      } else {
+        fallbacks.push(`cloud-denoise:setup-failed (${err instanceof Error ? err.message : String(err)})`);
+      }
+      fallbacks.push("→ffmpeg-aggressive");
+      ctx.onLog("cloud-denoise: all providers exhausted, degrading to ffmpeg-aggressive");
+      profile = "ffmpeg-aggressive";
+    }
   }
 
   let masteredBlob: Blob;
@@ -143,6 +218,7 @@ export async function runAudioTask(
       container: "mp4",
       onProgress: (p) => ctx.onProgress(0.3 + p * 0.55),
       onLog: (m) => { if (m.includes("Error")) ctx.onLog(`master: ${m}`); },
+      externalAudio: enhancedAudio,
     });
   } catch (e) {
     // Last resort: keep the render as-is.

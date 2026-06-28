@@ -1,9 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useI18n } from "@/lib/i18n";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 
 export function SiteHeader() {
   const { t, lang, setLang } = useI18n();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { data: isAdmin } = useIsAdmin();
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/70 backdrop-blur">
@@ -27,6 +29,14 @@ export function SiteHeader() {
           >
             {t.nav_projects}
           </Link>
+          {isAdmin && (
+            <Link
+              to="/admin"
+              className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted ${pathname.startsWith("/admin") ? "text-foreground" : "text-muted-foreground"}`}
+            >
+              {t.nav_admin}
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => setLang(lang === "pt" ? "en" : "pt")}

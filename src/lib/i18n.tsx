@@ -6,6 +6,7 @@ const dict = {
   pt: {
     nav_app: "App",
     nav_projects: "Projetos",
+    nav_admin: "Admin",
     nav_signin: "Entrar",
     nav_signout: "Sair",
     hero_eyebrow: "Pós-produção automatizada",
@@ -377,6 +378,7 @@ const dict = {
   en: {
     nav_app: "App",
     nav_projects: "Projects",
+    nav_admin: "Admin",
     nav_signin: "Sign in",
     nav_signout: "Sign out",
     hero_eyebrow: "Automated post-production",

@@ -21,12 +21,20 @@ export type FeedbackRefinement =
   | "cut_more"
   | "manual";
 
+export type FeedbackFormat =
+  | "podcast"
+  | "interview"
+  | "vlog"
+  | "short"
+  | "unknown";
+
 export interface FeedbackPayload {
   runId: string;
   rating?: FeedbackRating | null;
   refinementChoice?: FeedbackRefinement | null;
   versionId?: string | null;
   comment?: string | null;
+  format?: FeedbackFormat | null;
 }
 
 export async function saveFeedback(payload: FeedbackPayload): Promise<void> {
@@ -41,6 +49,7 @@ export async function saveFeedback(payload: FeedbackPayload): Promise<void> {
   if (payload.rating != null) row.rating = payload.rating;
   if (payload.refinementChoice != null) row.refinement_choice = payload.refinementChoice;
   if (payload.versionId != null) row.version_id = payload.versionId;
+  if (payload.format != null) row.format = payload.format;
   if (payload.comment !== undefined) {
     const trimmed = payload.comment == null ? null : payload.comment.trim().slice(0, 1000);
     row.comment = trimmed && trimmed.length > 0 ? trimmed : null;

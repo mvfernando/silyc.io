@@ -51,9 +51,21 @@ import {
   type FeedbackHistoryEntry,
   type FeedbackRating,
   type FeedbackRefinement,
+  type FeedbackFormat,
 } from "@/lib/agent/feedback";
 
 type Stage = "upload" | "working" | "ready" | "failed";
+
+function detectFormatFromReceipt(receipt: { analysis: Array<{ key: string; i18nKey?: string }> } | null): FeedbackFormat | null {
+  if (!receipt) return null;
+  const chip = receipt.analysis.find((c) => c.key === "format");
+  if (!chip?.i18nKey) return null;
+  if (chip.i18nKey.endsWith("_podcast")) return "podcast";
+  if (chip.i18nKey.endsWith("_interview")) return "interview";
+  if (chip.i18nKey.endsWith("_vlog")) return "vlog";
+  if (chip.i18nKey.endsWith("_short")) return "short";
+  return "unknown";
+}
 
 type PerTask = Partial<Record<TaskId, number>>;
 
@@ -230,13 +242,13 @@ export function AgentWorkspace() {
             onRate={(r) => {
               setRating(r);
               if (runIdRef.current) {
-                void saveFeedback({ runId: runIdRef.current, rating: r });
+                void saveFeedback({ runId: runIdRef.current, rating: r, format: detectFormatFromReceipt(receipt) });
               }
             }}
             onAskRefine={() => setShowRefine(true)}
             onComment={(c) => {
               if (runIdRef.current) {
-                void saveFeedback({ runId: runIdRef.current, comment: c });
+                void saveFeedback({ runId: runIdRef.current, comment: c, format: detectFormatFromReceipt(receipt) });
               }
             }}
             onRefine={(choice) => {
@@ -244,6 +256,7 @@ export function AgentWorkspace() {
                 void saveFeedback({
                   runId: runIdRef.current,
                   refinementChoice: choice as FeedbackRefinement,
+                  format: detectFormatFromReceipt(receipt),
                 });
               }
               if (file) startAgent(file, choice);
@@ -253,6 +266,7 @@ export function AgentWorkspace() {
                 void saveFeedback({
                   runId: runIdRef.current,
                   refinementChoice: "manual",
+                  format: detectFormatFromReceipt(receipt),
                 });
               }
               navigate({ to: "/app", search: { legacy: "1" } as never });

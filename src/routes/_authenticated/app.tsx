@@ -139,6 +139,7 @@ function AppPage() {
   const [cloud, setCloud] = useState(false);
   const [threshold, setThreshold] = useState(-30);
   const [minPause, setMinPause] = useState(0.5);
+  const [padding, setPadding] = useState(0.25);
   const [exportOpts, setExportOpts] = useState<ExportOptions>(defaultExportOptions);
 
   const [phase, setPhase] = useState<ProgressEvent["phase"] | "upload" | "cloud" | "idle">("idle");

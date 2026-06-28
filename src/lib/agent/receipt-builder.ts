@@ -14,6 +14,7 @@
 
 import type {
   AnalysisFacts,
+  ContentInsights,
   ReceiptAnalysisChip,
   TaskResults,
   ValueReceipt,
@@ -71,6 +72,7 @@ function silenceChip(results: TaskResults, facts: AnalysisFacts): ReceiptAnalysi
 export function buildReceipt(
   facts: AnalysisFacts,
   results: TaskResults,
+  insights?: ContentInsights,
 ): ValueReceipt {
   const silencesRemoved = results.cut?.silences.length ?? 0;
   const fillersRemoved = results.cut?.fillersRemoved ?? 0;
@@ -81,15 +83,21 @@ export function buildReceipt(
     silencesRemoved * 8 + fillersRemoved * 5 + removedSec * 1.4;
   const manualEditingMinutesSaved = Math.max(0, Math.round(savedSeconds / 60));
 
+  // Prefer chips coming from the ContentAnalyzer; otherwise fall back to
+  // the legacy chip detectors so older code paths keep working.
   const analysis: ReceiptAnalysisChip[] = [];
-  const lang = languageChip(results.transcribe?.language ?? facts.language ?? null);
-  if (lang) analysis.push(lang);
-  const fmt = formatChip(facts, results);
-  if (fmt) analysis.push(fmt);
-  const pace = paceChip(facts, results);
-  if (pace) analysis.push(pace);
-  const silence = silenceChip(results, facts);
-  if (silence) analysis.push(silence);
+  if (insights && insights.chips.length > 0) {
+    analysis.push(...insights.chips);
+  } else {
+    const lang = languageChip(results.transcribe?.language ?? facts.language ?? null);
+    if (lang) analysis.push(lang);
+    const fmt = formatChip(facts, results);
+    if (fmt) analysis.push(fmt);
+    const pace = paceChip(facts, results);
+    if (pace) analysis.push(pace);
+    const silence = silenceChip(results, facts);
+    if (silence) analysis.push(silence);
+  }
 
   return {
     silencesRemoved,
@@ -97,5 +105,6 @@ export function buildReceipt(
     removedSec,
     manualEditingMinutesSaved,
     analysis,
+    decisions: insights?.decisions ?? [],
   };
 }

@@ -12,6 +12,7 @@
  * so the UI doesn't have to know what's running underneath.
  */
 
+import { analyzeContent } from "./analyzer";
 import { decide } from "./decision-engine";
 import { buildReceipt } from "./receipt-builder";
 import { runPlan } from "./task-runner";
@@ -20,6 +21,7 @@ import type {
   AgentEvent,
   AgentHandlers,
   AgentInput,
+  ContentInsights,
   TaskResults,
   ValueReceipt,
 } from "./types";
@@ -36,12 +38,39 @@ export function runAgent(
     (async () => {
       try {
         const plan = decide(input.facts, input.refinement);
+        let insights: ContentInsights | undefined;
         const results = await runPlan(plan, input, {
           isCancelled: () => cancelled,
           isPaused: () => paused,
           emit,
+          onAfterTask: (taskId, partial, currentPlan) => {
+            // As soon as transcription is in, re-analyse the content and
+            // merge any cut tuning the analyzer recommends. Decisions and
+            // chips travel to the receipt at the end of the run.
+            if (taskId === "transcribe") {
+              insights = analyzeContent(input.facts, partial.transcribe);
+              if (Object.keys(insights.cutOverrides).length > 0) {
+                currentPlan.params.cut = {
+                  ...currentPlan.params.cut,
+                  ...insights.cutOverrides,
+                };
+                emit({
+                  type: "log",
+                  level: "info",
+                  message: `[analyzer] cut tuned: ${JSON.stringify(insights.cutOverrides)}`,
+                });
+              }
+              for (const d of insights.decisions) {
+                emit({
+                  type: "log",
+                  level: "info",
+                  message: `[analyzer] ${d.effectKey} ← ${d.reasonKey}`,
+                });
+              }
+            }
+          },
         });
-        const receipt = buildReceipt(input.facts, results);
+        const receipt = buildReceipt(input.facts, results, insights);
         emit({ type: "done", results, receipt });
         return { results, receipt };
       } catch (err) {

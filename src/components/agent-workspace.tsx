@@ -476,15 +476,49 @@ function ReadyStage({
 
       {/* Analysis chips — only confident ones */}
       {receipt.analysis.length > 0 && (
-        <div className="mt-6 flex flex-wrap gap-2 justify-center">
-          {receipt.analysis.map((chip) => (
-            <span
-              key={`${chip.key}-${chip.value}`}
-              className="rounded-full border border-border/60 bg-muted/30 px-3 py-1 text-xs text-muted-foreground"
-            >
-              {chip.value}
-            </span>
-          ))}
+        <div className="mt-8">
+          <p className="text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+            {t.agent_analysis_title}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2 justify-center">
+            {receipt.analysis.map((chip, i) => {
+              const label =
+                chip.value ??
+                (chip.i18nKey ? (t as unknown as Record<string, string>)[chip.i18nKey] : "") ??
+                "";
+              if (!label) return null;
+              return (
+                <span
+                  key={`${chip.key}-${i}`}
+                  className="rounded-full border border-border/60 bg-muted/30 px-3 py-1 text-xs text-muted-foreground"
+                >
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Decisions — short "did X because Y" sentences */}
+      {receipt.decisions.length > 0 && (
+        <div className="mt-6 mx-auto max-w-xl">
+          <p className="text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+            {t.agent_decisions_title}
+          </p>
+          <ul className="mt-3 space-y-1.5">
+            {receipt.decisions.map((d, i) => {
+              const tr = t as unknown as Record<string, string>;
+              const effect = tr[d.effectKey] ?? "";
+              const reason = tr[d.reasonKey] ?? "";
+              if (!effect || !reason) return null;
+              return (
+                <li key={i} className="text-center text-sm text-muted-foreground">
+                  {effect} {t.agent_decision_because} {reason}.
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 

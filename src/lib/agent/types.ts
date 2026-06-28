@@ -117,14 +117,25 @@ export type ValueReceipt = {
   manualEditingMinutesSaved: number;
   /** Confidence-gated short facts the UI can render as chips. */
   analysis: ReceiptAnalysisChip[];
+  /** Short "did X because of Y" sentences the UI renders under the chips. */
+  decisions: Array<{ reasonKey: string; effectKey: string }>;
 };
 
 /** A single confident fact about the source — only emitted when reliable. */
 export type ReceiptAnalysisChip = {
   /** Stable key for i18n ("language", "speakers", "format", "pace", "silence"). */
   key: "language" | "speakers" | "format" | "pace" | "silence";
-  /** Human label resolved by the UI layer through i18n. */
-  value: string;
+  /** Literal label when no translation is needed (e.g. "Português"). */
+  value?: string;
+  /** Optional i18n key resolved by the UI ("agent_chip_pace_fast"). */
+  i18nKey?: string;
+};
+
+/** Output of the ContentAnalyzer — drives cut overrides, chips, decisions. */
+export type ContentInsights = {
+  chips: ReceiptAnalysisChip[];
+  decisions: Array<{ reasonKey: string; effectKey: string }>;
+  cutOverrides: Partial<TaskParams["cut"]>;
 };
 
 /** Events emitted while the agent is running. UI subscribes via handlers. */

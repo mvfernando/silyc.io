@@ -1070,6 +1070,7 @@ function AppPage() {
             ctaBusy: t.autocut_busy,
             cancel: t.cancel,
             upload: t.autocut_phase_upload,
+            extract: t.autocut_phase_extract,
             transcribe: t.autocut_phase_transcribe,
             analyzing: t.autocut_phase_analyze,
             done: t.autocut_phase_done,

@@ -161,9 +161,8 @@ function AnalysisIllustration({ play }: { play: boolean }) {
                     }
                   : { duration: 0.3 }
               }
-              style={{ willChange: "transform, opacity" }}
               className={`flex-1 origin-bottom rounded-sm ${silent ? "bg-muted-foreground/40" : "bg-foreground/80"}`}
-              style={{ height: `${h}%` }}
+              style={{ height: `${h}%`, willChange: "transform, opacity" }}
             />
           );
         })}

@@ -340,6 +340,15 @@ const dict = {
     agent_reaction_meh: "Precisa melhorar",
     agent_reaction_thanks: "Obrigado pelo feedback",
     agent_reaction_meh_hint: "Experimente “Refinar com IA” para uma segunda passagem.",
+    // ---- History ----
+    agent_history_title: "Histórico de reações",
+    agent_history_empty: "Sem reações anteriores.",
+    agent_history_refinement_none: "Sem refinamento",
+    agent_history_refinement_more_dynamic: "Mais dinâmico",
+    agent_history_refinement_more_natural: "Mais natural",
+    agent_history_refinement_cut_more: "Cortar mais",
+    agent_history_refinement_manual: "Modo manual",
+    agent_history_no_rating: "Sem nota",
     // ---- Analyzer chips & decisions ----
     agent_analysis_title: "A IA identificou",
     agent_decisions_title: "Decisões da IA",

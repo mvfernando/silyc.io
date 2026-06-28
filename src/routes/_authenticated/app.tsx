@@ -1004,6 +1004,7 @@ function AppPage() {
                 detection={detection}
                 minPause={minPause}
                 padding={padding}
+                keepOverrides={keepOverrides}
               />
             </div>
           )}

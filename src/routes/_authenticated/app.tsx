@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n";
 import { SiteHeader } from "@/components/site-header";
+import { AgentWorkspace } from "@/components/agent-workspace";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/spinner";
 import { Input } from "@/components/ui/input";
@@ -59,16 +60,32 @@ import {
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
-type SearchParams = { reprocess?: string; resume?: string };
+type SearchParams = { reprocess?: string; resume?: string; legacy?: string };
 
 export const Route = createFileRoute("/_authenticated/app")({
   validateSearch: (s: Record<string, unknown>): SearchParams => ({
     reprocess: typeof s.reprocess === "string" ? s.reprocess : undefined,
     resume: typeof s.resume === "string" ? s.resume : undefined,
+    legacy: typeof s.legacy === "string" ? s.legacy : undefined,
   }),
   head: () => ({ meta: [{ title: "Silyc — Novo projeto" }] }),
-  component: AppPage,
+  component: AppPageGate,
 });
+
+function AppPageGate() {
+  const search = Route.useSearch();
+  // Default = new 3-state agent workspace.
+  // `?legacy=1`, `?reprocess=…`, or `?resume=…` opens the advanced UI so
+  // existing flows (reprocess / resume) keep working unchanged.
+  const useLegacy = search.legacy === "1" || !!search.reprocess || !!search.resume;
+  if (useLegacy) return <AppPage />;
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader />
+      <AgentWorkspace />
+    </div>
+  );
+}
 
 type StepKey = "silences" | "audio" | "timeline" | "export";
 const PHASE_TO_STEP: Record<ProgressEvent["phase"], StepKey> = {

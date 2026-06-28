@@ -45,6 +45,7 @@ import { validateUpload, withBackoff, isTransientCloudError, type UploadValidati
 import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 import { PreviewModal } from "@/components/preview-modal";
 import { SilenceTimeline } from "@/components/silence-timeline";
+import { RangePreview, type PreviewRange } from "@/components/range-preview";
 import {
   SILENCE_PRESETS,
   matchPreset,
@@ -174,6 +175,7 @@ function AppPage() {
   const [keepOverrides, setKeepOverrides] = useState<Set<number>>(new Set());
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<UploadValidation | null>(null);
+  const [previewRange, setPreviewRange] = useState<PreviewRange | null>(null);
 
   type ResultState = {
     projectId: string;
@@ -1148,15 +1150,36 @@ function AppPage() {
                   return next;
                 });
               }}
+              onPreview={file ? (r) => setPreviewRange(r) : undefined}
+              previewIndex={previewRange?.index ?? null}
               labels={{
                 kept: t.timeline_kept,
                 removed: t.timeline_removed,
                 total: t.timeline_total,
                 cuts: t.timeline_cuts,
                 manualKept: t.timeline_manual_kept,
+                preview: t.timeline_preview,
               }}
             />
             <p className="mt-2 text-[11px] text-muted-foreground">{t.timeline_interactive_hint}</p>
+            {file && (
+              <RangePreview
+                file={file}
+                range={previewRange}
+                totalDuration={detection.duration}
+                labels={{
+                  title: t.preview_range_title,
+                  hint: t.preview_range_hint,
+                  play: t.preview_play,
+                  playContext: t.preview_play_context,
+                  stop: t.preview_stop,
+                  close: t.preview_close,
+                  range: t.preview_range_label,
+                  context: t.preview_context_label,
+                }}
+                onClose={() => setPreviewRange(null)}
+              />
+            )}
           </section>
         )}
 

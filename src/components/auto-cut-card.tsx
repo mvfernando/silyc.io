@@ -12,7 +12,7 @@ import {
   type TranscriptionJobStatus,
 } from "@/lib/replicate.functions";
 import { chunksToSilences, estimateTranscriptionCostUsd } from "@/lib/auto-cut";
-import { extractAudioForTranscription } from "@/lib/ffmpeg-processor";
+import { detectSilencesOnly, extractAudioForTranscription } from "@/lib/ffmpeg-processor";
 import { fingerprintFile } from "@/lib/file-hash";
 import type { SilenceRange } from "@/components/silence-timeline";
 
@@ -46,6 +46,13 @@ function fmtMinSec(s: number): string {
 type Phase = "idle" | "cache" | "extract" | "upload" | "transcribe" | "analyze" | "done";
 
 const TRANSCRIPTION_MODEL = "openai/whisper";
+
+function isBillingFallback(job: TranscriptionJobStatus): boolean {
+  return (
+    job.id === "replicate-transcription-unavailable" ||
+    /\b402\b|insufficient credit|purchase credit|billing/i.test(job.error ?? "")
+  );
+}
 
 export function AutoCutCard({
   file,
@@ -184,6 +191,9 @@ export function AutoCutCard({
     try {
       job = await start({ data: { audioUrl: signedUrl, language: language ?? null } });
       setPredictionId(job.id);
+      if (isBillingFallback(job)) {
+        toast.message("Transcrição IA indisponível; usando detecção local de silêncio.");
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`${labels.errPrefix}: ${msg}`);
@@ -220,10 +230,19 @@ export function AutoCutCard({
 
     setPhase("analyze");
     setProgress(90);
-    const { silences, fillersRemoved } = chunksToSilences(job.chunks, totalDurationSec, {
-      removeFillers,
-      language: job.language ?? language ?? null,
-    });
+    const { silences, fillersRemoved } = job.chunks.length > 0
+      ? chunksToSilences(job.chunks, totalDurationSec, {
+          removeFillers,
+          language: job.language ?? language ?? null,
+        })
+      : {
+          ...(await detectSilencesOnly(file, {
+            thresholdDb: -35,
+            minPauseSec: 0.45,
+            paddingSec: 0.25,
+          })),
+          fillersRemoved: 0,
+        };
     setProgress(100);
     setPhase("done");
     setPredictionId(null);

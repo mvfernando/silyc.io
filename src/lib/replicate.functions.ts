@@ -13,6 +13,32 @@ type PredictionResponse = {
   completed_at?: string | null;
 };
 
+function replicateMessage(
+  status: number,
+  json: PredictionResponse & { detail?: string },
+  fallback: string,
+): string {
+  return `Replicate ${status}: ${json.detail ?? json.error ?? fallback}`;
+}
+
+function isReplicateBillingError(status: number, message: string): boolean {
+  return status === 402 || /insufficient credit|purchase credit|billing/i.test(message);
+}
+
+function transcriptionUnavailable(error: string): TranscriptionJobStatus {
+  return {
+    id: "replicate-transcription-unavailable",
+    status: "succeeded",
+    chunks: [],
+    language: null,
+    text: "",
+    error,
+    createdAt: new Date().toISOString(),
+    startedAt: null,
+    completedAt: new Date().toISOString(),
+  };
+}
+
 // Resemble-Enhance — voice clarity + denoise. Accepts an audio URL.
 // Model version pinned to a known public release.
 const RESEMBLE_ENHANCE_VERSION =
@@ -65,9 +91,7 @@ export const startEnhanceAudio = createServerFn({ method: "POST" })
     });
     const json = (await res.json()) as PredictionResponse & { detail?: string };
     if (!res.ok) {
-      throw new Error(
-        `Replicate ${res.status}: ${json.detail ?? json.error ?? "request failed"}`,
-      );
+      throw new Error(replicateMessage(res.status, json, "request failed"));
     }
     return toStatus(json);
   });
@@ -82,9 +106,7 @@ export const pollEnhanceAudio = createServerFn({ method: "POST" })
     });
     const json = (await res.json()) as PredictionResponse & { detail?: string };
     if (!res.ok) {
-      throw new Error(
-        `Replicate ${res.status}: ${json.detail ?? json.error ?? "poll failed"}`,
-      );
+      throw new Error(replicateMessage(res.status, json, "poll failed"));
     }
     return toStatus(json);
   });
@@ -100,9 +122,7 @@ export const cancelEnhanceAudio = createServerFn({ method: "POST" })
     });
     const json = (await res.json()) as PredictionResponse & { detail?: string };
     if (!res.ok) {
-      throw new Error(
-        `Replicate ${res.status}: ${json.detail ?? json.error ?? "cancel failed"}`,
-      );
+      throw new Error(replicateMessage(res.status, json, "cancel failed"));
     }
     return toStatus(json);
   });
@@ -228,9 +248,11 @@ export const startTranscription = createServerFn({ method: "POST" })
     });
     const json = (await res.json()) as PredictionResponse & { detail?: string };
     if (!res.ok) {
-      throw new Error(
-        `Replicate ${res.status}: ${json.detail ?? json.error ?? "transcription request failed"}`,
-      );
+      const message = replicateMessage(res.status, json, "transcription request failed");
+      if (isReplicateBillingError(res.status, message)) {
+        return transcriptionUnavailable(message);
+      }
+      throw new Error(message);
     }
     return toTranscription(json);
   });
@@ -245,9 +267,11 @@ export const pollTranscription = createServerFn({ method: "POST" })
     });
     const json = (await res.json()) as PredictionResponse & { detail?: string };
     if (!res.ok) {
-      throw new Error(
-        `Replicate ${res.status}: ${json.detail ?? json.error ?? "transcription poll failed"}`,
-      );
+      const message = replicateMessage(res.status, json, "transcription poll failed");
+      if (isReplicateBillingError(res.status, message)) {
+        return transcriptionUnavailable(message);
+      }
+      throw new Error(message);
     }
     return toTranscription(json);
   });
@@ -263,9 +287,7 @@ export const cancelTranscription = createServerFn({ method: "POST" })
     });
     const json = (await res.json()) as PredictionResponse & { detail?: string };
     if (!res.ok) {
-      throw new Error(
-        `Replicate ${res.status}: ${json.detail ?? json.error ?? "cancel failed"}`,
-      );
+      throw new Error(replicateMessage(res.status, json, "cancel failed"));
     }
     return toTranscription(json);
   });

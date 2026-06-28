@@ -56,8 +56,10 @@ export async function runCloudDenoise(
 }
 
 /** Default provider chain — Replicate first, then fal.ai. */
-export function defaultDenoiseProviders(): DenoiseProvider[] {
-  return [
+export type DenoiseProvidersEnabled = { replicate?: boolean; fal?: boolean };
+
+export function defaultDenoiseProviders(enabled: DenoiseProvidersEnabled = { replicate: true, fal: true }): DenoiseProvider[] {
+  const all: DenoiseProvider[] = [
     {
       name: "replicate",
       run: async (audioUrl) => {
@@ -75,4 +77,5 @@ export function defaultDenoiseProviders(): DenoiseProvider[] {
       },
     },
   ];
+  return all.filter((p) => enabled[p.name] !== false);
 }

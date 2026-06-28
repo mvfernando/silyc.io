@@ -164,6 +164,60 @@ export type ProcessResult = {
   silences: SilenceRange[];
 };
 
+export type DetectionResult = {
+  silences: SilenceRange[];
+  originalDuration: number;
+};
+
+export async function detectSilencesOnly(file: File, opts: ProcessOptions): Promise<DetectionResult> {
+  const { thresholdDb, minPauseSec, onProgress, onLog, controller, cachedSilences, cachedDuration, onDetectionComplete } = opts;
+  if (cachedSilences && typeof cachedDuration === "number") {
+    onProgress?.({ phase: "detect", progress: 1 });
+    return { silences: cachedSilences, originalDuration: cachedDuration };
+  }
+
+  const ffmpeg = await loadFFmpeg(onLog);
+  onProgress?.({ phase: "load", progress: 1 });
+  await waitWhilePaused(controller);
+
+  const inputName = "input." + (file.name.split(".").pop() || "mp4");
+  await ffmpeg.writeFile(inputName, await fetchFile(file));
+  onProgress?.({ phase: "probe", progress: 0.3 });
+  await waitWhilePaused(controller);
+
+  let logBuf = "";
+  const logHandler = ({ message }: { message: string }) => {
+    logBuf += message + "\n";
+  };
+  try {
+    ffmpeg.on("log", logHandler);
+    await ffmpeg.exec([
+      "-i",
+      inputName,
+      "-af",
+      `silencedetect=noise=${thresholdDb}dB:d=${minPauseSec}`,
+      "-f",
+      "null",
+      "-",
+    ]);
+  } finally {
+    ffmpeg.off("log", logHandler);
+    try {
+      await ffmpeg.deleteFile(inputName);
+    } catch {}
+  }
+
+  if (controller?.isCancelled()) throw new CancelledError();
+  const durMatch = logBuf.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  const totalDuration = durMatch
+    ? parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseFloat(durMatch[3])
+    : 0;
+  const silences = parseSilenceLog(logBuf, totalDuration);
+  onDetectionComplete?.({ silences, totalDuration });
+  onProgress?.({ phase: "detect", progress: 1 });
+  return { silences, originalDuration: totalDuration };
+}
+
 export async function processVideoRemoveSilence(file: File, opts: ProcessOptions): Promise<ProcessResult> {
   const {
     thresholdDb,

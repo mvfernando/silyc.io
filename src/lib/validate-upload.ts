@@ -3,6 +3,8 @@
 // to confirm: container is decodable, has video stream with non-zero
 // dimensions, has a usable duration, and (best-effort) carries an audio track.
 
+import { LOCAL_RENDER_MAX_BYTES, MAX_UPLOAD_BYTES, formatFileSize } from "./upload-limits";
+
 export type UploadValidation = {
   ok: boolean;
   durationSec: number;
@@ -61,8 +63,8 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
   checks.push({ id: "container", status: "pass", detail: `${file.type || "video/*"} · .${ext}` });
   checks.push({
     id: "size",
-    status: sizeMB > 220 ? "fail" : sizeMB > 150 ? "warn" : "pass",
-    detail: `${sizeMB.toFixed(1)} MB`,
+    status: file.size > MAX_UPLOAD_BYTES ? "fail" : file.size > LOCAL_RENDER_MAX_BYTES ? "warn" : "pass",
+    detail: formatFileSize(file.size),
   });
 
   const url = URL.createObjectURL(file);

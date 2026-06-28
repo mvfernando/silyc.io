@@ -163,6 +163,7 @@ function AppPage() {
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
   const [detection, setDetection] = useState<{ silences: SilenceRange[]; duration: number } | null>(null);
+  const [keepOverrides, setKeepOverrides] = useState<Set<number>>(new Set());
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<UploadValidation | null>(null);
 

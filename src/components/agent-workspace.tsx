@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/spinner";
 import { supabase } from "@/integrations/supabase/client";
+import { useI18n } from "@/lib/i18n";
 import { validateUpload } from "@/lib/validate-upload";
 import { formatFileSize, MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 import { formatDuration } from "@/lib/ffmpeg-processor";
@@ -49,21 +50,25 @@ type Stage = "upload" | "working" | "ready" | "failed";
 
 type PerTask = Partial<Record<TaskId, number>>;
 
-const HUMAN_LABELS: Record<TaskId, string> = {
-  transcribe: "A compreender o vídeo",
-  cut: "A escolher os cortes",
-  audio: "A polir o áudio",
-  render: "A montar a versão final",
-};
-
-const REFINEMENT_OPTIONS: Array<{ id: Exclude<RefinementChoice, "none" | "manual">; label: string; hint: string }> = [
-  { id: "more_dynamic", label: "Mais dinâmico", hint: "Corta pausas curtas e remove fillers" },
-  { id: "more_natural", label: "Mais natural", hint: "Mantém respirações e fillers leves" },
-  { id: "cut_more", label: "Cortar ainda mais", hint: "Apertado, sem respiros" },
-];
-
 export function AgentWorkspace() {
   const navigate = useNavigate();
+  const { t } = useI18n();
+
+  const taskLabels: Record<TaskId, string> = {
+    transcribe: t.agent_task_transcribe,
+    cut: t.agent_task_cut,
+    audio: t.agent_task_audio,
+    render: t.agent_task_render,
+  };
+  const refinementOptions: Array<{
+    id: Exclude<RefinementChoice, "none" | "manual">;
+    label: string;
+    hint: string;
+  }> = [
+    { id: "more_dynamic", label: t.agent_refine_dynamic, hint: t.agent_refine_dynamic_hint },
+    { id: "more_natural", label: t.agent_refine_natural, hint: t.agent_refine_natural_hint },
+    { id: "cut_more", label: t.agent_refine_cut_more, hint: t.agent_refine_cut_more_hint },
+  ];
 
   const [stage, setStage] = useState<Stage>("upload");
   const [file, setFile] = useState<File | null>(null);
@@ -151,13 +156,13 @@ export function AgentWorkspace() {
   const handleFile = useCallback(
     async (f: File) => {
       if (f.size > MAX_UPLOAD_BYTES) {
-        toast.error(`Ficheiro acima do limite (${formatFileSize(MAX_UPLOAD_BYTES)}).`);
+        toast.error(`${t.agent_file_too_large} (${formatFileSize(MAX_UPLOAD_BYTES)}).`);
         return;
       }
       setFile(f);
       await startAgent(f, "none");
     },
-    [startAgent],
+    [startAgent, t.agent_file_too_large],
   );
 
   const globalProgress = useMemo(() => {
@@ -174,11 +179,18 @@ export function AgentWorkspace() {
     <div className="relative">
       <AnimatePresence mode="wait">
         {stage === "upload" && (
-          <UploadStage key="upload" onFile={handleFile} onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })} />
+          <UploadStage
+            key="upload"
+            t={t}
+            onFile={handleFile}
+            onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
+          />
         )}
         {stage === "working" && (
           <WorkingStage
             key="working"
+            t={t}
+            taskLabels={taskLabels}
             file={file}
             currentTask={currentTask}
             plan={plan}
@@ -193,6 +205,8 @@ export function AgentWorkspace() {
         {stage === "ready" && receipt && (
           <ReadyStage
             key="ready"
+            t={t}
+            refinementOptions={refinementOptions}
             receipt={receipt}
             outputUrl={outputUrl}
             originalFile={file}
@@ -212,6 +226,7 @@ export function AgentWorkspace() {
         {stage === "failed" && (
           <FailedStage
             key="failed"
+            t={t}
             error={error}
             onRetry={() => file && startAgent(file, "none")}
             onReset={() => {
@@ -231,9 +246,11 @@ export function AgentWorkspace() {
 /* ------------------------------------------------------------------ */
 
 function UploadStage({
+  t,
   onFile,
   onLegacy,
 }: {
+  t: ReturnType<typeof useI18n>["t"];
   onFile: (f: File) => void;
   onLegacy: () => void;
 }) {
@@ -250,10 +267,10 @@ function UploadStage({
     >
       <div className="text-center mb-10">
         <h1 className="font-display text-4xl md:text-5xl tracking-tight text-foreground">
-          Upload. Volte quando estiver pronto.
+          {t.agent_upload_title}
         </h1>
         <p className="mt-4 text-muted-foreground text-base">
-          A Silyc trata do resto. Cortes, fillers, áudio e exportação — sem configurações.
+          {t.agent_upload_subtitle}
         </p>
       </div>
 
@@ -275,10 +292,10 @@ function UploadStage({
         }`}
       >
         <p className="text-lg text-foreground/90 font-medium">
-          Arraste o seu vídeo aqui
+          {t.agent_dropzone_primary}
         </p>
         <p className="text-sm text-muted-foreground mt-2">
-          ou clique para escolher um ficheiro · até {formatFileSize(MAX_UPLOAD_BYTES)}
+          {t.agent_dropzone_secondary} · {t.agent_dropzone_limit} {formatFileSize(MAX_UPLOAD_BYTES)}
         </p>
         <input
           ref={inputRef}
@@ -297,7 +314,7 @@ function UploadStage({
           onClick={onLegacy}
           className="text-xs text-muted-foreground/70 hover:text-muted-foreground underline-offset-4 hover:underline"
         >
-          Prefere afinar manualmente? Abrir workspace avançado
+          {t.agent_open_legacy}
         </button>
       </div>
     </motion.div>
@@ -309,6 +326,8 @@ function UploadStage({
 /* ------------------------------------------------------------------ */
 
 function WorkingStage({
+  t,
+  taskLabels,
   file,
   currentTask,
   plan,
@@ -319,6 +338,8 @@ function WorkingStage({
   onToggleLogs,
   onCancel,
 }: {
+  t: ReturnType<typeof useI18n>["t"];
+  taskLabels: Record<TaskId, string>;
   file: File | null;
   currentTask: TaskId | null;
   plan: TaskPlan | null;
@@ -329,7 +350,7 @@ function WorkingStage({
   onToggleLogs: () => void;
   onCancel: () => void;
 }) {
-  const label = currentTask ? HUMAN_LABELS[currentTask] : "A preparar o agente";
+  const label = currentTask ? taskLabels[currentTask] : t.agent_preparing;
   const pct = Math.round(progress * 100);
 
   return (
@@ -349,7 +370,7 @@ function WorkingStage({
           {label}…
         </h2>
         <p className="mt-3 text-muted-foreground">
-          Pode fechar esta página — vamos avisar quando estiver pronto.
+          {t.agent_close_page_hint}
         </p>
       </div>
 
@@ -358,24 +379,24 @@ function WorkingStage({
         <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
           <span>{pct}%</span>
           <span>
-            {done.size}/{plan?.steps.length ?? 0} etapas
+            {done.size}/{plan?.steps.length ?? 0} {t.agent_steps_of}
           </span>
         </div>
       </div>
 
       <div className="mt-10 flex items-center justify-center gap-4">
         <Button variant="ghost" size="sm" onClick={onToggleLogs}>
-          {showLogs ? "Esconder detalhes" : "Ver detalhes"}
+          {showLogs ? t.agent_hide_details : t.agent_show_details}
         </Button>
         <span className="h-4 w-px bg-border" />
         <Button variant="ghost" size="sm" onClick={onCancel}>
-          Cancelar
+          {t.agent_cancel}
         </Button>
       </div>
 
       {showLogs && (
         <div className="mt-8 rounded-lg border border-border/60 bg-muted/20 p-4 max-h-64 overflow-auto font-mono text-[11px] text-muted-foreground leading-relaxed">
-          {logs.length === 0 ? <p>Sem eventos ainda.</p> : logs.map((l, i) => <div key={i}>{l}</div>)}
+          {logs.length === 0 ? <p>{t.agent_no_events}</p> : logs.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
     </motion.div>
@@ -387,6 +408,8 @@ function WorkingStage({
 /* ------------------------------------------------------------------ */
 
 function ReadyStage({
+  t,
+  refinementOptions,
   receipt,
   outputUrl,
   originalFile,
@@ -397,6 +420,12 @@ function ReadyStage({
   onManual,
   onNew,
 }: {
+  t: ReturnType<typeof useI18n>["t"];
+  refinementOptions: Array<{
+    id: Exclude<RefinementChoice, "none" | "manual">;
+    label: string;
+    hint: string;
+  }>;
   receipt: ValueReceipt;
   outputUrl: string | null;
   originalFile: File | null;
@@ -429,18 +458,18 @@ function ReadyStage({
       className="mx-auto max-w-4xl px-6 py-14"
     >
       <div className="text-center">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Pronto</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{t.agent_ready_eyebrow}</p>
         <h2 className="mt-3 font-display text-4xl md:text-5xl tracking-tight text-foreground">
-          Poupou cerca de {savedLabel} de edição manual
+          {t.agent_saved_prefix} {savedLabel} {t.agent_saved_suffix}
         </h2>
       </div>
 
       {/* Receipt — what we did */}
       <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <ReceiptCard label="Silêncios removidos" value={receipt.silencesRemoved.toString()} />
-        <ReceiptCard label="Fillers removidos" value={receipt.fillersRemoved.toString()} />
+        <ReceiptCard label={t.agent_card_silences} value={receipt.silencesRemoved.toString()} />
+        <ReceiptCard label={t.agent_card_fillers} value={receipt.fillersRemoved.toString()} />
         <ReceiptCard
-          label="Tempo cortado"
+          label={t.agent_card_removed}
           value={receipt.removedSec > 0 ? formatDuration(receipt.removedSec) : "—"}
         />
       </div>
@@ -473,14 +502,14 @@ function ReadyStage({
             href={outputUrl}
             download={originalFile ? `silyc-${originalFile.name}` : "silyc-output.mp4"}
           >
-            <Button size="lg">Descarregar</Button>
+            <Button size="lg">{t.agent_download}</Button>
           </a>
         )}
         <Button variant="outline" size="lg" onClick={onAskRefine}>
-          Refinar com IA
+          {t.agent_refine}
         </Button>
         <Button variant="ghost" size="lg" onClick={onNew}>
-          Novo vídeo
+          {t.agent_new_video}
         </Button>
       </div>
 
@@ -494,9 +523,9 @@ function ReadyStage({
             className="mt-10 overflow-hidden"
           >
             <div className="rounded-2xl border border-border/60 bg-muted/10 p-6">
-              <p className="text-sm font-medium text-foreground">Como quer melhorar?</p>
+              <p className="text-sm font-medium text-foreground">{t.agent_refine_title}</p>
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2">
-                {REFINEMENT_OPTIONS.map((opt) => (
+                {refinementOptions.map((opt) => (
                   <button
                     key={opt.id}
                     onClick={() => onRefine(opt.id)}
@@ -512,7 +541,7 @@ function ReadyStage({
                   onClick={onManual}
                   className="text-xs text-muted-foreground/70 hover:text-muted-foreground underline-offset-4 hover:underline"
                 >
-                  Ajustar manualmente
+                  {t.agent_refine_manual}
                 </button>
               </div>
             </div>
@@ -544,11 +573,13 @@ function ReceiptCard({ label, value }: { label: string; value: string }) {
 /* ------------------------------------------------------------------ */
 
 function FailedStage({
+  t,
   error,
   onRetry,
   onReset,
   onLegacy,
 }: {
+  t: ReturnType<typeof useI18n>["t"];
   error: string | null;
   onRetry: () => void;
   onReset: () => void;
@@ -562,15 +593,15 @@ function FailedStage({
       className="mx-auto max-w-xl px-6 py-20 text-center"
     >
       <h2 className="font-display text-3xl tracking-tight text-foreground">
-        Algo correu mal
+        {t.agent_failed_title}
       </h2>
       <p className="mt-3 text-muted-foreground text-sm">
-        {error ?? "Erro desconhecido durante o processamento."}
+        {error ?? t.agent_failed_fallback}
       </p>
       <div className="mt-8 flex items-center justify-center gap-3">
-        <Button onClick={onRetry}>Tentar novamente</Button>
+        <Button onClick={onRetry}>{t.agent_retry}</Button>
         <Button variant="outline" onClick={onReset}>
-          Outro vídeo
+          {t.agent_other_video}
         </Button>
       </div>
       <div className="mt-6">
@@ -578,7 +609,7 @@ function FailedStage({
           onClick={onLegacy}
           className="text-xs text-muted-foreground/70 hover:text-muted-foreground underline-offset-4 hover:underline"
         >
-          Abrir workspace avançado
+          {t.agent_open_advanced}
         </button>
       </div>
     </motion.div>

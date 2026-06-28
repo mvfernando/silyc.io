@@ -115,10 +115,14 @@ function ProjectDetail() {
     });
   };
 
-  const { data: project, isLoading } = useQuery({
+  const { data: project, isLoading, error: projectError } = useQuery({
     queryKey: ["project", id],
     queryFn: async () => {
-      const { data, error } = await supabase.from("projects").select("*").eq("id", id).single();
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
@@ -624,8 +628,17 @@ function ProjectDetail() {
           ← {t.proj_back}
         </Link>
 
-        {isLoading || !project ? (
-          <div className="mt-16 text-center text-sm text-muted-foreground">…</div>
+        {isLoading ? (
+          <div className="mt-16 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> {t.processing}
+          </div>
+        ) : !project ? (
+          <MissingProject
+            t={t}
+            id={id}
+            error={projectError instanceof Error ? projectError.message : null}
+            onBack={() => navigate({ to: "/projects" })}
+          />
         ) : (
           <>
             <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
@@ -764,6 +777,46 @@ function triggerDownload(blob: Blob, filename: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function MissingProject({
+  t,
+  id,
+  error,
+  onBack,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  id: string;
+  error: string | null;
+  onBack: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const handleForceDelete = async () => {
+    setBusy(true);
+    try {
+      await supabase.from("projects").delete().eq("id", id);
+      toast.success(t.deleted);
+      onBack();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t.err_delete);
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="mt-16 rounded-xl border border-dashed border-border bg-card/30 p-8 text-center">
+      <h2 className="text-lg font-semibold">{t.proj_not_found_title}</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {error ?? t.proj_not_found_desc}
+      </p>
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <Button variant="outline" onClick={onBack}>{t.proj_back}</Button>
+        <Button variant="ghost" onClick={handleForceDelete} disabled={busy} aria-busy={busy}>
+          {busy && <Spinner className="mr-2" />}
+          {t.proj_delete}
+        </Button>
+      </div>
+    </section>
+  );
 }
 
 function PublicStatusPanel({

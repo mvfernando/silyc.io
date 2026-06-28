@@ -604,6 +604,9 @@ function ReadyStage({
         </div>
       )}
 
+      {/* Audio panel */}
+      {results?.audio && <AudioPanel t={t} audio={results.audio} />}
+
       {/* Actions */}
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         {outputUrl && (

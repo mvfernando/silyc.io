@@ -23,6 +23,13 @@ import type { AgentInput, TaskParams, TaskResults } from "../types";
 /** Model identifier kept in sync with replicate.functions.ts (cache key column). */
 const TRANSCRIPTION_MODEL = "openai/whisper";
 
+function isBillingFallback(job: TranscriptionJobStatus): boolean {
+  return (
+    job.id === "replicate-transcription-unavailable" ||
+    /\b402\b|insufficient credit|purchase credit|billing/i.test(job.error ?? "")
+  );
+}
+
 export type TranscribeCtx = {
   params: TaskParams["transcribe"];
   /** 0..1 progress reporter for the runner. */
@@ -106,6 +113,11 @@ export async function runTranscribeTask(
     }
     throw e;
   }
+  if (isBillingFallback(job)) {
+    ctx.onLog(`transcription unavailable (Replicate billing): ${job.error ?? "insufficient credit"} — falling back to silence-based cuts`);
+    ctx.onProgress(1);
+    return { cacheHit: false, chunks: [], language: null, text: "" };
+  }
   ctx.onLog(`whisper job ${job.id} started`);
 
   const startedAt = Date.now();
@@ -133,6 +145,11 @@ export async function runTranscribeTask(
         return { cacheHit: false, chunks: [], language: null, text: "" };
       }
       throw e;
+    }
+    if (isBillingFallback(job)) {
+      ctx.onLog(`transcription poll unavailable (Replicate billing) — falling back to silence-based cuts`);
+      ctx.onProgress(1);
+      return { cacheHit: false, chunks: [], language: null, text: "" };
     }
     // Crude progress animation 0.3 → 0.9 while we wait
     ctx.onProgress(Math.min(0.9, 0.3 + (Date.now() - startedAt) / timeoutMs));

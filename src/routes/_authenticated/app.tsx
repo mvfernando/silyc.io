@@ -241,15 +241,18 @@ function AppPage() {
     controllerRef.current?.cancel();
   };
 
+  const fileRequiresCloud = !!file && file.size > LOCAL_RENDER_MAX_BYTES;
+  const effectiveCloudForUi = cloud || fileRequiresCloud;
+
   const estimate = useMemo(
     () =>
       estimateCredits({
-        cloud,
+        cloud: effectiveCloudForUi,
         fileSizeBytes: file?.size ?? 0,
         estimatedDurationSec: resume?.totalDuration,
         exportOpts,
       }),
-    [cloud, file, resume, exportOpts],
+    [effectiveCloudForUi, file, resume, exportOpts],
   );
 
   const persistResume = (
@@ -300,6 +303,9 @@ function AppPage() {
       cursor = end;
     }
     if (cursor < totalDuration) keeps.push({ start: cursor, end: totalDuration });
+    if (keeps.length === 0) {
+      throw new Error("No audible content detected. Try lowering the silence threshold.");
+    }
 
     const submitArgs = {
       sourceUrl: signed.signedUrl,
@@ -783,7 +789,13 @@ function AppPage() {
           )}
         </section>
 
-        <CloudPanel t={t} cloud={cloud} onChange={setCloud} env={CLOUD_ENV} />
+        <CloudPanel
+          t={t}
+          cloud={effectiveCloudForUi}
+          onChange={setCloud}
+          env={CLOUD_ENV}
+          locked={fileRequiresCloud}
+        />
 
         {validation && <ValidationPanel t={t} v={validation} />}
 
@@ -796,7 +808,7 @@ function AppPage() {
           actual={actualCredits}
           explanation={explainCredits(
             {
-              cloud,
+              cloud: effectiveCloudForUi,
               resolution: exportOpts.resolution,
               estimatedDurationSec: resume?.totalDuration,
               fileSizeBytes: file?.size,
@@ -921,11 +933,13 @@ function CloudPanel({
   cloud,
   onChange,
   env,
+  locked,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   cloud: boolean;
   onChange: (v: boolean) => void;
   env: "sandbox" | "production";
+  locked?: boolean;
 }) {
   return (
     <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
@@ -937,9 +951,9 @@ function CloudPanel({
               {env === "production" ? t.cloud_env_prod : t.cloud_env_dev}
             </span>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{t.cloud_desc}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{locked ? t.large_file_cloud_only : t.cloud_desc}</p>
         </div>
-        <Switch checked={cloud} onCheckedChange={onChange} />
+        <Switch checked={cloud} onCheckedChange={onChange} disabled={locked} />
       </div>
     </section>
   );

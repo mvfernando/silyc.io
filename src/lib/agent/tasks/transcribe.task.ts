@@ -92,9 +92,20 @@ export async function runTranscribeTask(
   // ---- 4. start + poll Whisper -----------------------------------------
   await ctx.waitWhilePaused();
   if (ctx.isCancelled()) throw new Error("cancelled");
-  let job: TranscriptionJobStatus = await startTranscription({
-    data: { audioUrl: signed.signedUrl, language: ctx.params.language ?? null },
-  });
+  let job: TranscriptionJobStatus;
+  try {
+    job = await startTranscription({
+      data: { audioUrl: signed.signedUrl, language: ctx.params.language ?? null },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/\b402\b|insufficient credit/i.test(msg)) {
+      ctx.onLog(`transcription unavailable (Replicate billing): ${msg} — falling back to silence-based cuts`);
+      ctx.onProgress(1);
+      return { cacheHit: false, chunks: [], language: null, text: "" };
+    }
+    throw e;
+  }
   ctx.onLog(`whisper job ${job.id} started`);
 
   const startedAt = Date.now();
@@ -112,7 +123,17 @@ export async function runTranscribeTask(
     if (Date.now() - startedAt > timeoutMs) throw new Error("transcription timeout");
     await new Promise((r) => setTimeout(r, delay));
     delay = Math.min(delay + 1500, 8000);
-    job = await pollTranscription({ data: { id: job.id } });
+    try {
+      job = await pollTranscription({ data: { id: job.id } });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/\b402\b|insufficient credit/i.test(msg)) {
+        ctx.onLog(`transcription poll unavailable (Replicate billing) — falling back to silence-based cuts`);
+        ctx.onProgress(1);
+        return { cacheHit: false, chunks: [], language: null, text: "" };
+      }
+      throw e;
+    }
     // Crude progress animation 0.3 → 0.9 while we wait
     ctx.onProgress(Math.min(0.9, 0.3 + (Date.now() - startedAt) / timeoutMs));
   }

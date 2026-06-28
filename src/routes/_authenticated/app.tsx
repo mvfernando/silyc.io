@@ -44,6 +44,7 @@ import { mapError, type MappedError } from "@/lib/error-mapper";
 import { validateUpload, withBackoff, isTransientCloudError, type UploadValidation, type ValidationCheck } from "@/lib/validate-upload";
 import { LOCAL_RENDER_MAX_BYTES, formatFileSize } from "@/lib/upload-limits";
 import { PreviewModal } from "@/components/preview-modal";
+import { SilenceTimeline } from "@/components/silence-timeline";
 
 const CLOUD_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes before auto-fallback
 
@@ -160,6 +161,7 @@ function AppPage() {
   // Resume state held alongside the picked file
   const [resume, setResume] = useState<ResumeState | null>(null);
   const detectionCacheRef = useRef<{ silences: SilenceRange[]; duration: number } | null>(null);
+  const [detection, setDetection] = useState<{ silences: SilenceRange[]; duration: number } | null>(null);
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<UploadValidation | null>(null);
 
@@ -280,6 +282,8 @@ function AppPage() {
         return;
       }
       setFile(f);
+      detectionCacheRef.current = null;
+      setDetection(null);
       if (f.size > LOCAL_RENDER_MAX_BYTES) {
         setCloud(true);
         toast.info(t.auto_cloud_enabled);
@@ -287,6 +291,9 @@ function AppPage() {
       if (!name) setName(f.name.replace(/\.[^.]+$/, ""));
       if (targetResume && fingerprintFile(f) === targetResume.fingerprint) {
         setResume(targetResume);
+        if (targetResume.silences && targetResume.totalDuration) {
+          setDetection({ silences: targetResume.silences, duration: targetResume.totalDuration });
+        }
       } else {
         setResume(null);
       }
@@ -601,6 +608,7 @@ function AppPage() {
             },
             onDetectionComplete: ({ silences, totalDuration }) => {
               detectionCacheRef.current = { silences, duration: totalDuration };
+              setDetection({ silences, duration: totalDuration });
               appendLog({
                 level: "info",
                 step: "silences",
@@ -670,6 +678,7 @@ function AppPage() {
           cachedDuration: resume?.totalDuration,
           onDetectionComplete: ({ silences, totalDuration }) => {
             detectionCacheRef.current = { silences, duration: totalDuration };
+            setDetection({ silences, duration: totalDuration });
             appendLog({
               level: "info",
               step: "silences",
@@ -1035,6 +1044,27 @@ function AppPage() {
               </Button>
             </div>
           </div>
+        )}
+
+        {detection && detection.silences.length > 0 && (
+          <section className="mt-6 rounded-xl border border-border/80 bg-card/40 p-6">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                {t.step_silences} · {t.step_timeline}
+              </h2>
+            </div>
+            <SilenceTimeline
+              silences={detection.silences}
+              totalDuration={detection.duration}
+              removedSeconds={detection.silences.reduce((a, s) => a + Math.max(0, s.end - s.start), 0)}
+              labels={{
+                kept: t.timeline_kept,
+                removed: t.timeline_removed,
+                total: t.timeline_total,
+                cuts: t.timeline_cuts,
+              }}
+            />
+          </section>
         )}
 
         {result && !busy && (

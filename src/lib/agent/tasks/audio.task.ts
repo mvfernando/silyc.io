@@ -38,7 +38,7 @@ export type AudioCtx = {
 };
 
 /** Pick an audio profile from measured SNR + tier. */
-function pickProfile(
+export function pickProfile(
   snrDb: number,
   tier: "standard" | "pro" | undefined,
 ): { profile: "ffmpeg-light" | "ffmpeg-aggressive" | "cloud-denoise"; downgraded: boolean } {

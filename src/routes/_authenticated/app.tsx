@@ -67,6 +67,39 @@ const PHASE_TO_STEP: Record<ProgressEvent["phase"], StepKey> = {
   done: "export",
 };
 
+// Relative weight of each phase in the global progress bar (sums to ~1).
+const PHASE_WEIGHTS: Record<string, number> = {
+  load: 0.03,
+  probe: 0.04,
+  detect: 0.45,
+  audio: 0.08,
+  encode: 0.35,
+  upload: 0.05,
+  cloud: 0.45,
+  done: 0,
+  idle: 0,
+};
+const PHASE_ORDER = ["load", "probe", "detect", "audio", "encode", "upload", "done"];
+
+function computeGlobalProgress(phase: string, phaseProgress: number): number {
+  if (phase === "cloud") return Math.round(phaseProgress);
+  const idx = PHASE_ORDER.indexOf(phase);
+  if (idx < 0) return 0;
+  let acc = 0;
+  for (let i = 0; i < idx; i++) acc += PHASE_WEIGHTS[PHASE_ORDER[i]] ?? 0;
+  acc += (PHASE_WEIGHTS[phase] ?? 0) * (phaseProgress / 100);
+  return Math.min(99, Math.round(acc * 100));
+}
+
+function formatEta(seconds: number): string {
+  if (!isFinite(seconds) || seconds <= 0) return "—";
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
+}
+
 const CLOUD_ENV: "sandbox" | "production" =
   import.meta.env.MODE === "production" ? "production" : "sandbox";
 

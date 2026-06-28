@@ -963,6 +963,7 @@ function AppPage() {
                 max={-10}
                 step={1}
                 onChange={setThreshold}
+                hint={t.hint_threshold}
               />
               <SliderField
                 label={t.opt_min_pause}
@@ -973,6 +974,7 @@ function AppPage() {
                 step={0.05}
                 decimals={2}
                 onChange={setMinPause}
+                hint={t.hint_min_pause}
               />
               <SliderField
                 label={t.opt_padding}
@@ -983,8 +985,15 @@ function AppPage() {
                 step={0.05}
                 decimals={2}
                 onChange={setPadding}
+                hint={t.hint_padding}
               />
               </div>
+              <ImpactPreview
+                t={t}
+                detection={detection}
+                minPause={minPause}
+                padding={padding}
+              />
             </div>
           )}
         </section>
@@ -1374,10 +1383,10 @@ function OptionRow({
 }
 
 function SliderField({
-  label, value, unit, min, max, step, decimals = 0, onChange,
+  label, value, unit, min, max, step, decimals = 0, onChange, hint,
 }: {
   label: string; value: number; unit: string; min: number; max: number; step: number;
-  decimals?: number; onChange: (v: number) => void;
+  decimals?: number; onChange: (v: number) => void; hint?: string;
 }) {
   return (
     <div>
@@ -1388,6 +1397,64 @@ function SliderField({
         </span>
       </div>
       <Slider value={[value]} onValueChange={(v) => onChange(v[0])} min={min} max={max} step={step} className="mt-3" />
+      {hint && <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function ImpactPreview({
+  t,
+  detection,
+  minPause,
+  padding,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  detection: { silences: SilenceRange[]; duration: number } | null;
+  minPause: number;
+  padding: number;
+}) {
+  const filtered = useMemo(() => {
+    if (!detection) return [];
+    const out: SilenceRange[] = [];
+    for (const s of detection.silences) {
+      if (s.end - s.start < minPause) continue;
+      const start = s.start + padding;
+      const end = s.end - padding;
+      if (end - start > 0.01) out.push({ start, end });
+    }
+    return out;
+  }, [detection, minPause, padding]);
+
+  const removed = useMemo(
+    () => filtered.reduce((a, s) => a + (s.end - s.start), 0),
+    [filtered],
+  );
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          {t.impact_title}
+        </h3>
+        <span className="text-[11px] text-muted-foreground">
+          {t.impact_threshold_note}
+        </span>
+      </div>
+      {detection ? (
+        <SilenceTimeline
+          silences={filtered}
+          totalDuration={detection.duration}
+          removedSeconds={removed}
+          labels={{
+            kept: t.timeline_kept,
+            removed: t.timeline_removed,
+            total: t.timeline_total,
+            cuts: t.timeline_cuts,
+          }}
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">{t.impact_no_detection}</p>
+      )}
     </div>
   );
 }

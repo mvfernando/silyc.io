@@ -12,6 +12,7 @@ import {
   type TranscriptionJobStatus,
 } from "@/lib/replicate.functions";
 import { chunksToSilences, estimateTranscriptionCostUsd } from "@/lib/auto-cut";
+import { extractAudioForTranscription } from "@/lib/ffmpeg-processor";
 import type { SilenceRange } from "@/components/silence-timeline";
 
 type Labels = {
@@ -20,6 +21,7 @@ type Labels = {
   cta: string;
   ctaBusy: string;
   cancel: string;
+  extract: string;
   upload: string;
   transcribe: string;
   analyzing: string;
@@ -38,7 +40,7 @@ function fmtMinSec(s: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-type Phase = "idle" | "upload" | "transcribe" | "analyze" | "done";
+type Phase = "idle" | "extract" | "upload" | "transcribe" | "analyze" | "done";
 
 export function AutoCutCard({
   file,

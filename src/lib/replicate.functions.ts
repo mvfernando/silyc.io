@@ -206,22 +206,23 @@ export const startTranscription = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<TranscriptionJobStatus> => {
     const token = process.env.REPLICATE_API_TOKEN;
     if (!token) throw new Error("Replicate API token not configured");
-    // Use the official openai/whisper model endpoint (no version pinning needed).
-    const res = await fetch(`${REPLICATE_BASE}/models/openai/whisper/predictions`, {
+    // WhisperX provides accurate word-level timestamps via align_output.
+    // Version pinned to a known public release of victor-upmeet/whisperx.
+    const WHISPERX_VERSION =
+      "655845d6190ef70573c669245f245892cd039df4b880a1e3a65852c09252f5cc";
+    const res = await fetch(`${REPLICATE_BASE}/predictions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        version: WHISPERX_VERSION,
         input: {
-          audio: data.audioUrl,
-          model: "large-v3",
-          // Word-level timestamps for precise cuts that respect speech boundaries.
-          word_timestamps: true,
+          audio_file: data.audioUrl,
+          align_output: true,
           language: data.language ?? undefined,
           temperature: 0,
-          condition_on_previous_text: false,
         },
       }),
     });

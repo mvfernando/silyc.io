@@ -333,6 +333,13 @@ const dict = {
     agent_other_video: "Outro vídeo",
     agent_open_advanced: "Abrir workspace avançado",
     agent_file_too_large: "Ficheiro acima do limite",
+    // ---- Reaction (value-receipt) ----
+    agent_reaction_title: "Como ficou?",
+    agent_reaction_great: "Excelente",
+    agent_reaction_good: "Bom",
+    agent_reaction_meh: "Precisa melhorar",
+    agent_reaction_thanks: "Obrigado pelo feedback",
+    agent_reaction_meh_hint: "Experimente “Refinar com IA” para uma segunda passagem.",
     // ---- Analyzer chips & decisions ----
     agent_analysis_title: "A IA identificou",
     agent_decisions_title: "Decisões da IA",
@@ -683,6 +690,13 @@ const dict = {
     agent_other_video: "Another video",
     agent_open_advanced: "Open advanced workspace",
     agent_file_too_large: "File above the limit",
+    // ---- Reaction (value-receipt) ----
+    agent_reaction_title: "How did it turn out?",
+    agent_reaction_great: "Excellent",
+    agent_reaction_good: "Good",
+    agent_reaction_meh: "Needs improvement",
+    agent_reaction_thanks: "Thanks for the feedback",
+    agent_reaction_meh_hint: "Try “Refine with AI” for a second pass.",
     // ---- Analyzer chips & decisions ----
     agent_analysis_title: "AI identified",
     agent_decisions_title: "AI decisions",

@@ -21,10 +21,10 @@ import type {
 
 /** Relative work each task represents. Used to weight global progress. */
 const TASK_WEIGHTS: Record<TaskId, number> = {
-  transcribe: 0.25,
+  transcribe: 0.2,
   cut: 0.05,
+  render: 0.55,
   audio: 0.2,
-  render: 0.5,
 };
 
 export type RunnerCtx = {
@@ -82,9 +82,12 @@ export async function runPlan(
           transcribe: results.transcribe,
         });
       } else if (taskId === "audio") {
+        if (!results.render) throw new Error("audio task requires render results");
         results.audio = await runAudioTask(input, {
           ...base,
           params: plan.params.audio,
+          renderResult: results.render,
+          transcribe: results.transcribe,
         });
       } else if (taskId === "render") {
         if (!results.cut) throw new Error("render task requires cut results");

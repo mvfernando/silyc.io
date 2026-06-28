@@ -685,8 +685,8 @@ function AppPage() {
             paddingSec: padding,
           exportOptions: exportOpts,
           controller,
-          cachedSilences: resume?.silences,
-          cachedDuration: resume?.totalDuration,
+          cachedSilences: effectiveCachedSilences,
+          cachedDuration: effectiveCachedDuration,
           onDetectionComplete: ({ silences, totalDuration }) => {
             detectionCacheRef.current = { silences, duration: totalDuration };
             setDetection({ silences, duration: totalDuration });

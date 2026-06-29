@@ -25,4 +25,6 @@ Permitir que o usuário inicie um projeto, feche a aba e volte depois para baixa
 - Cota: 1 job ativo por usuário no free, N no pro?
 
 ## Status
-Pendente. Retomar junto com a reestruturação de rotas (`mem://roadmap/routes-restructure.md`) — faz sentido lançar com `/projects/:id` como hub que mostra jobs em andamento.
+Fase 1 entregue (29/06/26): aviso de saída (`beforeunload` + `useBlocker` modal), snapshot em `localStorage` (`silyc.agent.lastRun`) com banner de "processamento interrompido" ao voltar, e elapsed/ETA na barra de progresso. Não é retomada real — só feedback honesto.
+
+Fase 2 (background jobs server-side) pendente. Retomar junto com a reestruturação de rotas (`mem://roadmap/routes-restructure.md`) — faz sentido lançar com `/projects/:id` como hub que mostra jobs em andamento.

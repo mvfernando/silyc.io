@@ -21,18 +21,35 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useBlocker } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/spinner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { validateUpload } from "@/lib/validate-upload";
 import { formatFileSize, MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 import { formatDuration } from "@/lib/ffmpeg-processor";
+import {
+  clearSnapshot,
+  isRecent,
+  readSnapshot,
+  writeSnapshot,
+  type AgentSnapshot,
+} from "@/lib/agent-snapshot";
 import {
   runAgent,
   weightedGlobalProgress,
@@ -106,11 +123,57 @@ export function AgentWorkspace() {
   const localBlobRef = useRef<string | null>(null);
   const runIdRef = useRef<string | null>(null);
   const [rating, setRating] = useState<FeedbackRating | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+  const [interruptedSnapshot, setInterruptedSnapshot] = useState<AgentSnapshot | null>(null);
+
+  // On mount, check if a previous run was interrupted (snapshot stayed at
+  // "working"). We can't truly resume — show a banner so the user understands
+  // why they're back at the upload screen.
+  useEffect(() => {
+    const s = readSnapshot();
+    if (s && s.stage === "working" && isRecent(s)) {
+      setInterruptedSnapshot(s);
+    } else if (s) {
+      clearSnapshot();
+    }
+  }, []);
 
   useEffect(() => () => {
     if (localBlobRef.current) URL.revokeObjectURL(localBlobRef.current);
     controllerRef.current?.cancel();
   }, []);
+
+  // Persist a snapshot while a run is active.
+  useEffect(() => {
+    if (stage !== "working" || !file) return;
+    const ratio =
+      plan && plan.steps.length > 0
+        ? weightedGlobalProgress(plan, perTask, done)
+        : 0;
+    writeSnapshot({
+      fileName: file.name,
+      fileSize: file.size,
+      stage: "working",
+      currentTask: currentTask ?? null,
+      progress: ratio,
+      startedAt: startedAtRef.current ?? Date.now(),
+      updatedAt: Date.now(),
+    });
+  }, [stage, file, plan, perTask, done, currentTask]);
+
+  // Clear snapshot on terminal states.
+  useEffect(() => {
+    if (stage === "ready" || stage === "failed" || stage === "upload") {
+      clearSnapshot();
+    }
+  }, [stage]);
+
+  // Internal-navigation guard + browser beforeunload warning.
+  const blocker = useBlocker({
+    shouldBlockFn: () => stage === "working",
+    enableBeforeUnload: () => stage === "working",
+    withResolver: true,
+  });
 
   const startAgent = useCallback(
     async (sourceFile: File, refinement: RefinementChoice = "none") => {
@@ -123,6 +186,8 @@ export function AgentWorkspace() {
       setReceipt(null);
       setCurrentTask(null);
       setRating(null);
+      setInterruptedSnapshot(null);
+      startedAtRef.current = Date.now();
       runIdRef.current =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
@@ -203,6 +268,61 @@ export function AgentWorkspace() {
 
   return (
     <div className="relative">
+      {/* Recovery banner — appears on /app upload screen if a previous run
+          ended without reaching ready/failed (tab closed, crash, etc.). */}
+      {stage === "upload" && interruptedSnapshot && (
+        <div className="mx-auto max-w-3xl px-6 pt-6">
+          <div
+            role="status"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-3"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">
+                {t.agent_resume_banner_title}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t.agent_resume_banner_desc
+                  .replace("{file}", interruptedSnapshot.fileName)
+                  .replace("{pct}", String(Math.round(interruptedSnapshot.progress * 100)))}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                clearSnapshot();
+                setInterruptedSnapshot(null);
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+            >
+              {t.agent_resume_banner_dismiss}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <AlertDialog open={blocker.status === "blocked"}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.agent_leave_title}</AlertDialogTitle>
+            <AlertDialogDescription>{t.agent_leave_desc}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => blocker.reset?.()}>
+              {t.agent_leave_stay}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                controllerRef.current?.cancel();
+                clearSnapshot();
+                blocker.proceed?.();
+              }}
+            >
+              {t.agent_leave_confirm}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AnimatePresence mode="wait">
         {stage === "upload" && (
           <UploadStage
@@ -224,6 +344,7 @@ export function AgentWorkspace() {
             done={done}
             logs={logs}
             showLogs={showLogs}
+            startedAt={startedAtRef.current}
             onToggleLogs={() => setShowLogs((s) => !s)}
             onCancel={() => controllerRef.current?.cancel()}
           />
@@ -404,6 +525,7 @@ function WorkingStage({
   done,
   logs,
   showLogs,
+  startedAt,
   onToggleLogs,
   onCancel,
 }: {
@@ -416,11 +538,25 @@ function WorkingStage({
   done: Set<TaskId>;
   logs: string[];
   showLogs: boolean;
+  startedAt: number | null;
   onToggleLogs: () => void;
   onCancel: () => void;
 }) {
   const label = currentTask ? taskLabels[currentTask] : t.agent_preparing;
   const pct = Math.round(progress * 100);
+
+  // Live elapsed / ETA tick — recomputed every second on the client.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const elapsedMs = startedAt ? now - startedAt : 0;
+  const elapsedLabel = formatElapsed(elapsedMs);
+  const etaLabel =
+    startedAt && pct >= 10 && pct < 100
+      ? formatElapsed(Math.max(0, (elapsedMs / pct) * (100 - pct)))
+      : null;
 
   return (
     <motion.div
@@ -447,8 +583,19 @@ function WorkingStage({
         <Progress value={pct} className="h-1.5" />
         <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
           <span>{pct}%</span>
-          <span>
-            {done.size}/{plan?.steps.length ?? 0} {t.agent_steps_of}
+          <span className="flex items-center gap-3">
+            <span>
+              {done.size}/{plan?.steps.length ?? 0} {t.agent_steps_of}
+            </span>
+            {startedAt && (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span>
+                  {elapsedLabel} {t.agent_elapsed}
+                  {etaLabel ? ` · ${etaLabel} ${t.agent_eta}` : ""}
+                </span>
+              </>
+            )}
           </span>
         </div>
       </div>
@@ -470,6 +617,14 @@ function WorkingStage({
       )}
     </motion.div>
   );
+}
+
+function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
 }
 
 /* ------------------------------------------------------------------ */

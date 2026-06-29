@@ -118,6 +118,11 @@ function AdminPage() {
             <p className="text-sm text-muted-foreground">
               Reactions, refinement choices and rework rate across the agent runs.
             </p>
+            <nav className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="text-foreground">Feedback</span>
+              <Link to="/admin/users" className="hover:text-foreground">Users</Link>
+              <Link to="/admin/usage" className="hover:text-foreground">Usage</Link>
+            </nav>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Segmented

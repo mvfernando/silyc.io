@@ -8,7 +8,7 @@ import { AdminShell } from "@/components/admin-shell";
 import { listPlatformUsers, type AdminUserRow } from "@/lib/admin-users.functions";
 import { listFeedbackWithUsers, type FeedbackRowAdmin } from "@/lib/admin-feedback.functions";
 
-export const Route = createFileRoute("/_authenticated/admin")({
+export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({ meta: [{ title: "Silyc — Admin" }] }),
   component: AdminOverviewPage,
 });

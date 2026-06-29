@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Keep = { start: number; end: number };
 
@@ -37,6 +38,7 @@ function shotstackResolution(r: SubmitInput["resolution"]): string {
 }
 
 export const submitShotstackRender = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: SubmitInput) => input)
   .handler(async ({ data }) => {
     const { env, apiKey, url } = pickEnv();
@@ -80,6 +82,7 @@ export const submitShotstackRender = createServerFn({ method: "POST" })
   });
 
 export const pollShotstackRender = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data }) => {
     const { apiKey, url, env } = pickEnv();

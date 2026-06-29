@@ -857,6 +857,7 @@ const dict = {
     rate_limit_desc: "You hit the hourly or daily cap for this integration. Try again later or keep going with local processing.",
     rate_limit_reset_hour: "The quota resets every hour.",
     rate_limit_reset_day: "The daily quota resets every 24 hours.",
+    rate_limit_quota_unavailable: "Couldn't load quota right now.",
     admin_usage_title: "Integration usage",
     admin_usage_desc: "Per-user, per-integration call history.",
     admin_usage_from: "From",

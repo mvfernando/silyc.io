@@ -91,31 +91,40 @@ function AdminUsagePage() {
           <p className="text-sm text-muted-foreground">{t.admin_usage_desc}</p>
         </header>
 
-        <section className="mb-5 flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-card/40 p-4">
-          <label className="flex flex-col text-xs text-muted-foreground">
+        <section
+          aria-label={t.admin_usage_title}
+          className="mb-5 flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-card/40 p-4"
+        >
+          <label htmlFor="usage-from" className="flex flex-col text-xs text-muted-foreground">
             <span className="mb-1">{t.admin_usage_from}</span>
             <input
+              id="usage-from"
               type="datetime-local"
               value={toLocalInput(from)}
               onChange={(e) => setFrom(fromLocalInput(e.target.value))}
-              className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm text-foreground"
+              aria-label={t.admin_usage_from}
+              className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
           </label>
-          <label className="flex flex-col text-xs text-muted-foreground">
+          <label htmlFor="usage-to" className="flex flex-col text-xs text-muted-foreground">
             <span className="mb-1">{t.admin_usage_to}</span>
             <input
+              id="usage-to"
               type="datetime-local"
               value={toLocalInput(to)}
               onChange={(e) => setTo(fromLocalInput(e.target.value))}
-              className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm text-foreground"
+              aria-label={t.admin_usage_to}
+              className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
           </label>
-          <label className="flex flex-col text-xs text-muted-foreground">
+          <label htmlFor="usage-integration" className="flex flex-col text-xs text-muted-foreground">
             <span className="mb-1">{t.admin_usage_integration}</span>
             <select
+              id="usage-integration"
               value={integration}
               onChange={(e) => setIntegration(e.target.value)}
-              className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm text-foreground"
+              aria-label={t.admin_usage_integration}
+              className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               {INTEGRATION_OPTS.map((o) => (
                 <option key={o} value={o}>
@@ -128,15 +137,21 @@ function AdminUsagePage() {
             type="button"
             onClick={exportCsv}
             disabled={!summary.length}
-            className="ml-auto rounded-md border border-border/60 bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50"
+            aria-label={t.admin_usage_export_csv}
+            aria-disabled={!summary.length}
+            className="ml-auto rounded-md border border-border/60 bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             {t.admin_usage_export_csv}
           </button>
         </section>
 
-        <section className="rounded-lg border border-border/60 bg-card/40">
+        <section aria-live="polite" aria-busy={query.isLoading} className="rounded-lg border border-border/60 bg-card/40">
           {query.isLoading ? (
             <div className="grid place-items-center py-16"><Spinner /></div>
+          ) : query.isError ? (
+            <div role="alert" className="px-4 py-12 text-center text-sm text-destructive">
+              {(query.error as Error)?.message ?? "Failed to load usage"}
+            </div>
           ) : summary.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">{t.admin_usage_empty}</p>
           ) : (

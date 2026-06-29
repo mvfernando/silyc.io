@@ -424,6 +424,7 @@ const dict = {
     rate_limit_desc: "Você atingiu o limite por hora ou por dia para esta integração. Tente novamente mais tarde ou continue usando o processamento local.",
     rate_limit_reset_hour: "A quota é restaurada a cada hora.",
     rate_limit_reset_day: "A quota diária é restaurada a cada 24 horas.",
+    rate_limit_quota_unavailable: "Não foi possível carregar a quota agora.",
     admin_usage_title: "Uso por integração",
     admin_usage_desc: "Histórico de chamadas por usuário e integração.",
     admin_usage_from: "De",

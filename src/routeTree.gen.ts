@@ -19,6 +19,7 @@ import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminUsageRouteImport } from './routes/_authenticated/admin.usage'
 import { Route as ApiPublicHealthDenoiseRouteImport } from './routes/api/public/health.denoise'
+import { Route as AuthenticatedAdminUsersIdRouteImport } from './routes/_authenticated/admin.users.$id'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -69,6 +70,12 @@ const ApiPublicHealthDenoiseRoute = ApiPublicHealthDenoiseRouteImport.update({
   path: '/api/public/health/denoise',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAdminUsersIdRoute =
+  AuthenticatedAdminUsersIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => AuthenticatedAdminUsersRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -77,8 +84,9 @@ export interface FileRoutesByFullPath {
   '/app': typeof AuthenticatedAppRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
-  '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
 export interface FileRoutesByTo {
@@ -88,8 +96,9 @@ export interface FileRoutesByTo {
   '/app': typeof AuthenticatedAppRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
-  '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
 export interface FileRoutesById {
@@ -101,8 +110,9 @@ export interface FileRoutesById {
   '/_authenticated/app': typeof AuthenticatedAppRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/_authenticated/admin/usage': typeof AuthenticatedAdminUsageRoute
-  '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/_authenticated/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
 export interface FileRouteTypes {
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/admin/usage'
     | '/admin/users'
     | '/projects/$id'
+    | '/admin/users/$id'
     | '/api/public/health/denoise'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/admin/usage'
     | '/admin/users'
     | '/projects/$id'
+    | '/admin/users/$id'
     | '/api/public/health/denoise'
   id:
     | '__root__'
@@ -139,6 +151,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/usage'
     | '/_authenticated/admin/users'
     | '/_authenticated/projects/$id'
+    | '/_authenticated/admin/users/$id'
     | '/api/public/health/denoise'
   fileRoutesById: FileRoutesById
 }
@@ -221,17 +234,38 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHealthDenoiseRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/admin/users/$id': {
+      id: '/_authenticated/admin/users/$id'
+      path: '/$id'
+      fullPath: '/admin/users/$id'
+      preLoaderRoute: typeof AuthenticatedAdminUsersIdRouteImport
+      parentRoute: typeof AuthenticatedAdminUsersRoute
+    }
   }
 }
 
+interface AuthenticatedAdminUsersRouteChildren {
+  AuthenticatedAdminUsersIdRoute: typeof AuthenticatedAdminUsersIdRoute
+}
+
+const AuthenticatedAdminUsersRouteChildren: AuthenticatedAdminUsersRouteChildren =
+  {
+    AuthenticatedAdminUsersIdRoute: AuthenticatedAdminUsersIdRoute,
+  }
+
+const AuthenticatedAdminUsersRouteWithChildren =
+  AuthenticatedAdminUsersRoute._addFileChildren(
+    AuthenticatedAdminUsersRouteChildren,
+  )
+
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
-  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRouteWithChildren
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,
-  AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+  AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRouteWithChildren,
 }
 
 const AuthenticatedAdminRouteWithChildren =

@@ -117,7 +117,7 @@ export function mapError(err: unknown, lang: Lang): MappedError {
 
   // Stringified INVALID_PLAN: segment_too_short (common surface in toasts).
   if (m.includes("invalid_plan") && m.includes("segment_too_short")) {
-    const c = INVALID_PLAN_COPY.segment_too_short;
+    const c = INVALID_PLAN_COPY.segment_too_short!;
     return {
       title: pick(lang, c.titlePt, c.titleEn),
       cause: pick(lang, c.causePt, c.causeEn),

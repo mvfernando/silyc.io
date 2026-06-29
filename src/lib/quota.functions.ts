@@ -24,7 +24,12 @@ export const getMyQuota = createServerFn({ method: "GET" })
   .inputValidator(validateIntegration)
   .handler(async ({ data, context }): Promise<Quota> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: rpc, error } = await supabaseAdmin
+    const admin = supabaseAdmin as unknown as {
+      schema: (n: string) => {
+        rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
+      };
+    };
+    const { data: rpc, error } = await admin
       .schema("private")
       .rpc("get_quota", { _user_id: context.userId, _integration: data.integration });
     if (error) throw new Error(error.message);
@@ -42,9 +47,14 @@ export const getMyQuotas = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<Quota[]> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const admin = supabaseAdmin as unknown as {
+      schema: (n: string) => {
+        rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
+      };
+    };
     const out: Quota[] = [];
     for (const integration of INTEGRATIONS) {
-      const { data: rpc, error } = await supabaseAdmin
+      const { data: rpc, error } = await admin
         .schema("private")
         .rpc("get_quota", { _user_id: context.userId, _integration: integration });
       if (error) continue;

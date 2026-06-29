@@ -11,6 +11,9 @@ import { Label } from "@/components/ui/label";
 import { SiteHeader } from "@/components/site-header";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    reason: typeof s.reason === "string" ? s.reason : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Silyc — Entrar" },
@@ -23,6 +26,7 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { reason } = Route.useSearch();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,7 +34,11 @@ function AuthPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/app" });
+      const u = data.session?.user;
+      if (!u) return;
+      const verified =
+        !!u.email_confirmed_at || !!(u as { confirmed_at?: string }).confirmed_at;
+      if (!u.email || verified) navigate({ to: "/app" });
     });
   }, [navigate]);
 
@@ -86,6 +94,16 @@ function AuthPage() {
             <h1 className="text-lg font-semibold tracking-tight">{t.auth_title}</h1>
             <p className="mt-1 text-xs text-muted-foreground">{t.auth_sub}</p>
           </div>
+
+          {reason === "verify-email" && (
+            <div
+              role="alert"
+              className="mb-5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200"
+            >
+              Confirme seu email antes de acessar o aplicativo. Procure o link de
+              verificação na sua caixa de entrada (ou spam) e tente entrar novamente.
+            </div>
+          )}
 
           <Button
             type="button"

@@ -136,10 +136,17 @@ export const setUserAdmin = createServerFn({ method: "POST" })
   .inputValidator((input: { userId: string; isAdmin: boolean; reason?: string }) => {
     if (!input?.userId || typeof input.userId !== "string") throw new Error("userId required");
     if (typeof input.isAdmin !== "boolean") throw new Error("isAdmin required");
+    const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+    if (reason.length < 10) {
+      throw new Error("Reason is required (minimum 10 characters) for audit log.");
+    }
+    if (reason.length > 500) {
+      throw new Error("Reason must be 500 characters or fewer.");
+    }
     return {
       userId: input.userId,
       isAdmin: input.isAdmin,
-      reason: typeof input.reason === "string" ? input.reason.slice(0, 500) : "",
+      reason,
     };
   })
   .handler(async ({ data, context }): Promise<SetAdminResult> => {

@@ -177,6 +177,71 @@ function AdminUserDetailPage() {
             </ul>
           )}
         </Section>
+
+        {(() => {
+          const badge = data.audit.filter(
+            (a) => a.action === "grant_admin" || a.action === "revoke_admin",
+          );
+          return (
+            <Section title={`Admin badge changes (${badge.length})`}>
+              {badge.length === 0 ? (
+                <Empty>This user's admin badge has never been changed.</Empty>
+              ) : (
+                <ul className="divide-y divide-border/60 text-sm">
+                  {badge.map((a) => (
+                    <li key={a.id} className="py-3">
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="text-muted-foreground">
+                          <span
+                            className={`mr-2 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+                              a.action === "grant_admin"
+                                ? "border-emerald-500/40 text-emerald-300"
+                                : "border-amber-500/40 text-amber-200"
+                            }`}
+                          >
+                            {a.action === "grant_admin" ? "granted" : "revoked"}
+                          </span>
+                          {a.actor_email ? (
+                            <>
+                              by{" "}
+                              <a
+                                href={`mailto:${a.actor_email}`}
+                                className="underline hover:text-foreground"
+                              >
+                                {a.actor_email}
+                              </a>
+                            </>
+                          ) : a.actor_id ? (
+                            <>
+                              by{" "}
+                              <Link
+                                to="/admin/users/$id"
+                                params={{ id: a.actor_id }}
+                                className="underline hover:text-foreground"
+                              >
+                                {a.actor_id.slice(0, 8)}
+                              </Link>
+                            </>
+                          ) : null}
+                        </span>
+                        <time className="text-muted-foreground">
+                          {new Date(a.created_at).toLocaleString()}
+                        </time>
+                      </div>
+                      {a.details.reason ? (
+                        <p className="mt-1 text-foreground">{a.details.reason}</p>
+                      ) : (
+                        <p className="mt-1 text-xs italic text-muted-foreground/70">
+                          No reason recorded.
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          );
+        })()}
       </main>
     </div>
   );

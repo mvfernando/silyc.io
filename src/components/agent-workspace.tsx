@@ -635,6 +635,92 @@ function formatElapsed(ms: number): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* Recovery banner — shown after an interrupted run                    */
+/* ------------------------------------------------------------------ */
+
+function ResumeBanner({
+  t,
+  snapshot,
+  onResume,
+  onDismiss,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  snapshot: AgentSnapshot;
+  onResume: () => void;
+  onDismiss: () => void;
+}) {
+  const pct = Math.round(snapshot.progress * 100);
+  const elapsed = formatElapsed(Math.max(0, Date.now() - snapshot.startedAt));
+  const size = formatFileSize(snapshot.fileSize);
+  const phase = snapshot.currentTask ?? "—";
+  return (
+    <div
+      role="status"
+      className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-5 py-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
+            {t.agent_resume_banner_title}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t.agent_resume_banner_desc
+              .replace("{file}", snapshot.fileName)
+              .replace("{pct}", String(pct))}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline shrink-0"
+        >
+          {t.agent_resume_banner_dismiss}
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted-foreground">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.15em] text-muted-foreground/80">
+            {t.agent_resume_banner_saved_title}
+          </p>
+          <ul className="mt-2 space-y-1 list-disc pl-4">
+            <li>
+              {t.agent_resume_banner_saved_item_file
+                .replace("{file}", snapshot.fileName)
+                .replace("{size}", size)}
+            </li>
+            <li>
+              {t.agent_resume_banner_saved_item_progress
+                .replace("{phase}", phase)
+                .replace("{pct}", String(pct))}
+            </li>
+            <li>
+              {t.agent_resume_banner_saved_item_time.replace("{elapsed}", elapsed)}
+            </li>
+          </ul>
+        </div>
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.15em] text-muted-foreground/80">
+            {t.agent_resume_banner_steps_title}
+          </p>
+          <ol className="mt-2 space-y-1 list-decimal pl-4">
+            <li>{t.agent_resume_banner_step_1}</li>
+            <li>{t.agent_resume_banner_step_2}</li>
+            <li>{t.agent_resume_banner_step_3}</li>
+          </ol>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Button size="sm" onClick={onResume}>
+          {t.agent_resume_banner_resume}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Stage 3 — Ready                                                     */
 /* ------------------------------------------------------------------ */
 

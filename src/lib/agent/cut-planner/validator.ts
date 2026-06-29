@@ -129,12 +129,13 @@ export function validatePlan(
       }
     }
 
-    // explanations: warning until Sprint B makes them mandatory.
-    if (c.decision !== "keep" && c.kind === "gap" && c.reasonKey === "") {
+    // explanations: warning when a non-keep gap has no auditable factors
+    // (Sprint B made explanations[] the source of truth for the receipt).
+    if (c.decision !== "keep" && c.kind === "gap" && c.explanations.length === 0) {
       issues.push({
         code: "missing_explanation",
         severity: "warning",
-        message: `candidate #${i} (${c.decision}) has no reason key`,
+        message: `candidate #${i} (${c.decision}) has no explanations[]`,
         ref: { kind: "decision", index: i },
       });
     }

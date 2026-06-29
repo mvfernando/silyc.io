@@ -866,6 +866,21 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setLangState(detect());
+    if (typeof window === "undefined") return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== "silentcut.lang") return;
+      if (e.newValue === "pt" || e.newValue === "en") setLangState(e.newValue);
+    };
+    const onCustom = (e: Event) => {
+      const detail = (e as CustomEvent<Lang>).detail;
+      if (detail === "pt" || detail === "en") setLangState(detail);
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("silyc:lang-changed", onCustom as EventListener);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("silyc:lang-changed", onCustom as EventListener);
+    };
   }, []);
 
   // When a session exists, prefer the server-stored preference and keep it in sync.
@@ -902,7 +917,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const setLang = (l: Lang) => {
     setLangState(l);
-    if (typeof window !== "undefined") window.localStorage.setItem("silentcut.lang", l);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("silentcut.lang", l);
+      window.dispatchEvent(new CustomEvent<Lang>("silyc:lang-changed", { detail: l }));
+    }
     // Best-effort persist for signed-in users; ignore errors (offline / not auth'd).
     void (async () => {
       try {

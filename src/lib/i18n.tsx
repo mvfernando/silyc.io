@@ -838,6 +838,8 @@ const dict = {
     error_friendly_desc: "Please try again in a few seconds. If it keeps failing, head back home.",
     error_retry: "Try again",
     error_home: "Go home",
+    rate_limit_title: "Usage limit reached",
+    rate_limit_desc: "You hit the hourly or daily cap for this integration. Try again later or keep going with local processing.",
   },
 } as const;
 

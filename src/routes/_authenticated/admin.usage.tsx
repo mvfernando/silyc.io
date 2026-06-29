@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { SiteHeader } from "@/components/site-header";
 import { Spinner } from "@/components/spinner";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useI18n } from "@/lib/i18n";
+import { AdminShell } from "@/components/admin-shell";
 import { listIntegrationUsage, type UsageSummary } from "@/lib/admin-usage.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/usage")({
@@ -62,35 +62,23 @@ function AdminUsagePage() {
 
   if (roleLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <SiteHeader />
+      <AdminShell title="Usage">
         <div className="grid place-items-center py-16"><Spinner /></div>
-      </div>
+      </AdminShell>
     );
   }
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-background">
-        <SiteHeader />
-        <div className="mx-auto max-w-6xl px-4 py-16">
-          <h1 className="text-2xl font-semibold">Restricted</h1>
-          <p className="mt-2 text-muted-foreground">
-            <Link to="/app" className="underline">Back to app</Link>
-          </p>
-        </div>
-      </div>
+      <AdminShell title="Restricted">
+        <p className="text-sm text-muted-foreground">
+          <Link to="/app" className="underline">Back to app</Link>
+        </p>
+      </AdminShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <SiteHeader />
-      <main className="mx-auto max-w-6xl px-4 py-10">
-        <header className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">{t.admin_usage_title}</h1>
-          <p className="text-sm text-muted-foreground">{t.admin_usage_desc}</p>
-        </header>
-
+    <AdminShell title={t.admin_usage_title} description={t.admin_usage_desc}>
         <section
           aria-label={t.admin_usage_title}
           className="mb-5 flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-card/40 p-4"
@@ -179,7 +167,6 @@ function AdminUsagePage() {
             </table>
           )}
         </section>
-      </main>
-    </div>
+    </AdminShell>
   );
 }

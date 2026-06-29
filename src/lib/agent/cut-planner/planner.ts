@@ -25,11 +25,13 @@ import type {
   PlannerOptions,
   Word,
 } from "./types";
+import { hashIntent } from "./contracts";
 
 const HEAD_TAIL_FILLER_GUARD = 1;
 const MAX_FILLER_DUR = 1.2;
 
-const PLAN_VERSION = { schema: 1, ruleset: "v1.0.0" } as const;
+const PLAN_SCHEMA = 1;
+const RULESET_ID = "cuts.v1.0.0";
 
 export function planCuts(
   chunks: WhisperChunk[],
@@ -39,6 +41,11 @@ export function planCuts(
   const padding = opts.paddingSec ?? 0.08;
   const headPad = opts.headPaddingSec ?? 0.2;
   const tailPad = opts.tailPaddingSec ?? 0.3;
+  const version = {
+    schema: PLAN_SCHEMA,
+    ruleset: RULESET_ID,
+    intentHash: hashIntent(opts.intent ?? null),
+  };
 
   const words: Word[] = chunks
     .filter((c) => c && c.end > c.start)
@@ -50,7 +57,7 @@ export function planCuts(
 
   if (words.length === 0) {
     return {
-      version: { ...PLAN_VERSION },
+      version,
       silences: [],
       durationSec: total,
       removedSec: 0,
@@ -205,7 +212,7 @@ export function planCuts(
   for (const seg of segments) log.push(logForSegment(seg));
 
   return {
-    version: { ...PLAN_VERSION },
+    version,
     silences,
     durationSec: total,
     removedSec,

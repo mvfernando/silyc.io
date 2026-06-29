@@ -1,13 +1,20 @@
 export { planCuts } from "./planner";
 export { snapToZeroCrossing } from "./snap";
 export { planSegments } from "./encoding-strategy";
-export { scoreGap, classifyDecision, targetShortenSec, reasonKeyFor } from "./score";
+export {
+  scoreGap,
+  scoreGapWithExplanations,
+  classifyDecision,
+  targetShortenSec,
+  reasonKeyFor,
+} from "./score";
 export { extractGaps } from "./features";
 export { validatePlan } from "./validator";
 export {
   DEFAULT_INTENT,
   VALIDATION_CONSTANTS,
   hashIntent,
+  mediaFactsFromUpload,
 } from "./contracts";
 export type {
   MediaFacts,

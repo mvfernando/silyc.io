@@ -116,4 +116,6 @@ export type PlannerOptions = {
   tailPaddingSec?: number;
   /** Remove identified filler words. */
   removeFillers?: boolean;
+  /** EditingIntent applied to this run (Sprint A — feeds intentHash). */
+  intent?: import("./contracts").EditingIntent;
 };

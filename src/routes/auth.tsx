@@ -11,6 +11,9 @@ import { Label } from "@/components/ui/label";
 import { SiteHeader } from "@/components/site-header";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    reason: typeof s.reason === "string" ? s.reason : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Silyc — Entrar" },
@@ -23,6 +26,7 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { reason } = Route.useSearch();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,7 +34,11 @@ function AuthPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/app" });
+      const u = data.session?.user;
+      if (!u) return;
+      const verified =
+        !!u.email_confirmed_at || !!(u as { confirmed_at?: string }).confirmed_at;
+      if (!u.email || verified) navigate({ to: "/app" });
     });
   }, [navigate]);
 

@@ -14,7 +14,7 @@ import { isFiller } from "./fillers";
 import {
   classifyDecision,
   reasonKeyFor,
-  scoreGap,
+  scoreGapWithExplanations,
   targetShortenSec,
 } from "./score";
 import { snapToZeroCrossing } from "./snap";
@@ -25,7 +25,7 @@ import type {
   PlannerOptions,
   Word,
 } from "./types";
-import { hashIntent } from "./contracts";
+import { hashIntent, type DecisionExplanation } from "./contracts";
 
 const HEAD_TAIL_FILLER_GUARD = 1;
 const MAX_FILLER_DUR = 1.2;
@@ -84,6 +84,9 @@ export function planCuts(
         score: 1,
         decision: cut ? "remove" : "keep",
         reasonKey: "head_trim",
+        explanations: cut
+          ? [{ factor: "head_trim", weight: 1, contribution: 1, detail: `trim 0–${end.toFixed(2)}s before first word` }]
+          : [],
         cut,
         snappedCut: null,
       };
@@ -100,6 +103,9 @@ export function planCuts(
         score: 1,
         decision: cut ? "remove" : "keep",
         reasonKey: "tail_trim",
+        explanations: cut
+          ? [{ factor: "tail_trim", weight: 1, contribution: 1, detail: `trim ${start.toFixed(2)}s–end after last word` }]
+          : [],
         cut,
         snappedCut: null,
       };
@@ -108,7 +114,7 @@ export function planCuts(
       continue;
     }
 
-    const score = scoreGap(gap);
+    const { score, explanations } = scoreGapWithExplanations(gap);
     const decision = classifyDecision(score, gap);
     let cut: SilenceRange | null = null;
     if (decision === "remove") {
@@ -128,6 +134,7 @@ export function planCuts(
         score,
         decision: "shorten",
         reasonKey: reasonKeyFor(gap, "shorten"),
+        explanations,
         cut: leftCut,
         snappedCut: null,
       };
@@ -143,6 +150,7 @@ export function planCuts(
       score,
       decision,
       reasonKey: reasonKeyFor(gap, decision),
+      explanations,
       cut,
       snappedCut: null,
     };
@@ -178,6 +186,14 @@ export function planCuts(
         score: 1,
         decision: "remove",
         reasonKey: `filler_${(w.text || "").trim().toLowerCase()}`,
+        explanations: [
+          {
+            factor: "filler_word",
+            weight: 1,
+            contribution: 1,
+            detail: `filler "${(w.text || "").trim()}"`,
+          } as DecisionExplanation,
+        ],
         cut,
         snappedCut: null,
       };

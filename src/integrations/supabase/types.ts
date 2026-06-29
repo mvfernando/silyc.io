@@ -67,6 +67,27 @@ export type Database = {
           },
         ]
       }
+      integration_caps: {
+        Row: {
+          day_limit: number
+          hour_limit: number
+          integration: string
+          updated_at: string
+        }
+        Insert: {
+          day_limit: number
+          hour_limit: number
+          integration: string
+          updated_at?: string
+        }
+        Update: {
+          day_limit?: number
+          hour_limit?: number
+          integration?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       integration_usage: {
         Row: {
           called_at: string

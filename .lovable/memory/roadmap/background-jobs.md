@@ -20,9 +20,12 @@ Permitir que o usuário inicie um projeto, feche a aba e volte depois para baixa
 - Toast/badge "Job pronto" no header quando `status=done` for detectado em outra sessão.
 
 ## Decisões pendentes
-- Manter FFmpeg.wasm como fast-path para vídeos pequenos (<200MB) ou descontinuar?
-- Notificação por e-mail quando terminar (opt-in)?
-- Cota: 1 job ativo por usuário no free, N no pro?
+Bloqueiam o início da Fase 2 — usuário precisa responder antes de implementar.
+1. **Cut + render 100% Shotstack?** Mover ambos para Shotstack server-side e aposentar o FFmpeg.wasm como caminho rápido, ou manter wasm para vídeos pequenos (<200MB) como fast-path opcional?
+2. **Cota de jobs ativos simultâneos por usuário** — 1 no free / N no pro? Qual N? Que mensagem mostrar quando exceder?
+3. **E-mail ao concluir** — enviar notificação opt-in quando `status=done|failed`? Usa Lovable Emails (infra já disponível) — precisa template + toggle nas preferências.
+
+Aguardando resposta do usuário (29/06/26). Não iniciar Fase 2 sem as três decisões.
 
 ## Status
 Fase 1 entregue (29/06/26): aviso de saída (`beforeunload` + `useBlocker` modal), snapshot em `localStorage` (`silyc.agent.lastRun`) com banner de "processamento interrompido" ao voltar, e elapsed/ETA na barra de progresso. Não é retomada real — só feedback honesto.

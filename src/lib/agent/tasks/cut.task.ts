@@ -12,7 +12,7 @@
 import { chunksToSilences } from "@/lib/auto-cut";
 import { detectSilencesOnly } from "@/lib/ffmpeg-processor";
 import { planCuts } from "@/lib/agent/cut-planner";
-import { validatePlan } from "@/lib/agent/cut-planner/validator";
+import { InvalidPlanError, validatePlan } from "@/lib/agent/cut-planner/validator";
 import type { AgentInput, TaskParams, TaskResults } from "../types";
 
 export type CutCtx = {
@@ -59,13 +59,13 @@ export async function runCutTask(
         ctx.onLog(`[validator:${issue.severity}] ${issue.code} — ${issue.message}`);
       }
       if (!report.ok) {
-        const err = new Error(
-          `INVALID_PLAN: ${report.issues
-            .filter((i) => i.severity === "error")
-            .map((i) => i.code)
-            .join(", ")}`,
-        );
-        (err as Error & { code?: string }).code = "INVALID_PLAN";
+        const lang = (input.facts.language === "pt" ? "pt" : "en") as "pt" | "en";
+        const err = new InvalidPlanError(report, lang);
+        // Surface the actionable, multi-line summary in the job log so the
+        // user can read it from the live UI without expanding raw issues.
+        for (const line of err.toActionableMessage(lang).split("\n")) {
+          ctx.onLog(line);
+        }
         throw err;
       }
 

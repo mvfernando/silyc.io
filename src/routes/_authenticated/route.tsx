@@ -198,8 +198,15 @@ export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
     const { data } = await supabase.auth.getUser();
-    if (data.user) return { user: data.user };
-    throw redirect({ to: "/auth" });
+    const user = data.user;
+    if (!user) throw redirect({ to: "/auth" });
+    // Block unverified email accounts (OAuth providers always set email_confirmed_at).
+    const verified =
+      !!user.email_confirmed_at || !!(user as { confirmed_at?: string }).confirmed_at;
+    if (user.email && !verified) {
+      throw redirect({ to: "/auth", search: { reason: "verify-email" } as never });
+    }
+    return { user };
   },
   component: () => <Outlet />,
   errorComponent: AuthErrorBoundary,

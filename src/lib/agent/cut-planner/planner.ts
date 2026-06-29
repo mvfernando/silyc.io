@@ -124,6 +124,7 @@ export function planCuts(
       const right: CutCandidate = { ...left, cut: rightCut };
       candidates.push(left, right);
       log.push(logForCandidate(left));
+      log.push(logForCandidate(right));
       continue;
     }
     const cand: CutCandidate = {

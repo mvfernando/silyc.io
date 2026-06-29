@@ -47,7 +47,7 @@ function AdminUsagePage() {
 
   function exportCsv() {
     const rows = query.data?.rows ?? [];
-    const header = ["user_id", "integration", "created_at"].join(",");
+    const header = ["user_id", "integration", "called_at"].join(",");
     const body = rows
       .map((r) => `${r.user_id},${r.integration},${r.called_at}`)
       .join("\n");

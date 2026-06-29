@@ -560,10 +560,44 @@ function WorkingStage({
   }, []);
   const elapsedMs = startedAt ? now - startedAt : 0;
   const elapsedLabel = formatElapsed(elapsedMs);
-  const etaLabel =
-    startedAt && pct >= 10 && pct < 100
-      ? formatElapsed(Math.max(0, (elapsedMs / pct) * (100 - pct)))
-      : null;
+
+  // Smoothed ETA — exponential moving average of the progress rate
+  // (percent per second). Reacts faster than a flat elapsed/progress
+  // estimate when phases change pace, and stops jittering at low pct.
+  const rateRef = useRef<{ pct: number; t: number; rate: number } | null>(null);
+  useEffect(() => {
+    if (!startedAt) {
+      rateRef.current = null;
+      return;
+    }
+    const nowTs = Date.now();
+    const prev = rateRef.current;
+    if (!prev) {
+      rateRef.current = { pct, t: nowTs, rate: 0 };
+      return;
+    }
+    const dt = (nowTs - prev.t) / 1000;
+    const dp = pct - prev.pct;
+    if (dt > 0.25 && dp > 0) {
+      const instant = dp / dt;
+      // EWMA with alpha=0.25 — favours stability over reactivity.
+      const smoothed = prev.rate > 0 ? prev.rate * 0.75 + instant * 0.25 : instant;
+      rateRef.current = { pct, t: nowTs, rate: smoothed };
+    } else if (dp !== 0) {
+      rateRef.current = { ...prev, pct };
+    }
+  }, [pct, startedAt]);
+  const smoothedRate = rateRef.current?.rate ?? 0;
+  const etaLabel = (() => {
+    if (!startedAt || pct >= 100) return null;
+    if (pct < 5) return null; // too early to trust
+    if (smoothedRate > 0.05) {
+      return formatElapsed(((100 - pct) / smoothedRate) * 1000);
+    }
+    // Fallback to flat estimate once we have meaningful progress.
+    if (pct >= 10) return formatElapsed((elapsedMs / pct) * (100 - pct));
+    return null;
+  })();
 
   return (
     <motion.div

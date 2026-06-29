@@ -10,3 +10,4 @@ Processamento atual roda no browser (FFmpeg.wasm); sair da aba cancela o job —
 ## Memories
 - [Routes restructure backlog](mem://roadmap/routes-restructure.md) — Plano Opção B para mover `/app` → `/projects/new`. Pendente.
 - [Background jobs](mem://roadmap/background-jobs.md) — Mover pipeline para server-side persistido para permitir sair/voltar. Pendente, casar com a reestruturação de rotas.
+- [AI cuts autonomous](mem://roadmap/ai-cuts-autonomous.md) — Waveform + snap a frames + decisão re-encode/copy por segmento para cortes sub-frame, sem toggle na UI.

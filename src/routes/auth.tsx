@@ -95,6 +95,16 @@ function AuthPage() {
             <p className="mt-1 text-xs text-muted-foreground">{t.auth_sub}</p>
           </div>
 
+          {reason === "verify-email" && (
+            <div
+              role="alert"
+              className="mb-5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200"
+            >
+              Confirme seu email antes de acessar o aplicativo. Procure o link de
+              verificação na sua caixa de entrada (ou spam) e tente entrar novamente.
+            </div>
+          )}
+
           <Button
             type="button"
             variant="outline"

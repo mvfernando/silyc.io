@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { SiteHeader } from "@/components/site-header";
-import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Spinner } from "@/components/spinner";
+import { listFeedbackWithUsers, type FeedbackRowAdmin } from "@/lib/admin-feedback.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Silyc — Admin" }] }),
@@ -13,14 +14,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 type Period = "7d" | "30d" | "90d" | "all";
 
-interface FeedbackRow {
-  run_id: string;
-  rating: number | null;
-  refinement_choice: string | null;
-  format: string | null;
-  comment: string | null;
-  created_at: string;
-}
+type FeedbackRow = FeedbackRowAdmin;
 
 const REACTION_LABEL: Record<number, { emoji: string; label: string }> = {
   1: { emoji: "😕", label: "Needs work" },
@@ -48,21 +42,13 @@ function AdminPage() {
   const { data: isAdmin, isLoading: roleLoading } = useIsAdmin();
   const [period, setPeriod] = useState<Period>("30d");
   const [formatFilter, setFormatFilter] = useState<string>("all");
+  const fetchFeedback = useServerFn(listFeedbackWithUsers);
 
   const { data: rows, isLoading } = useQuery({
     queryKey: ["admin-feedback", period],
     enabled: !!isAdmin,
     queryFn: async (): Promise<FeedbackRow[]> => {
-      let q = supabase
-        .from("pipeline_feedback" as never)
-        .select("run_id, rating, refinement_choice, format, comment, created_at")
-        .order("created_at", { ascending: false })
-        .limit(2000);
-      const since = periodStart(period);
-      if (since) q = q.gte("created_at", since);
-      const { data, error } = await q;
-      if (error) throw error;
-      return (data as unknown as FeedbackRow[]) ?? [];
+      return await fetchFeedback({ data: { since: periodStart(period) } });
     },
   });
 
@@ -215,17 +201,34 @@ function AdminPage() {
                 {filtered
                   .filter((r) => r.comment && r.comment.trim().length > 0)
                   .slice(0, 12)
-                  .map((r) => (
-                    <li key={r.run_id} className="py-3">
-                      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                        <span>
-                          {r.rating ? REACTION_LABEL[r.rating]?.emoji : "·"} · {r.format ?? "unknown"} · {REFINEMENT_LABEL[r.refinement_choice ?? "none"]}
-                        </span>
-                        <time>{new Date(r.created_at).toLocaleDateString()}</time>
-                      </div>
-                      <p className="mt-1 text-foreground">{r.comment}</p>
-                    </li>
-                  ))}
+                  .map((r) => {
+                    const who = r.user_name || r.user_email || (r.user_id ? `User ${r.user_id.slice(0, 8)}` : "Anonymous");
+                    return (
+                      <li key={r.id} className="py-3">
+                        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                          <span className="truncate">
+                            <span className="font-medium text-foreground">{who}</span>
+                            {r.user_email && r.user_name && (
+                              <span className="ml-1 text-muted-foreground">· {r.user_email}</span>
+                            )}
+                            <span className="ml-2">
+                              {r.rating ? REACTION_LABEL[r.rating]?.emoji : "·"} · {r.format ?? "unknown"} · {REFINEMENT_LABEL[r.refinement_choice ?? "none"]}
+                            </span>
+                          </span>
+                          <time className="shrink-0">{new Date(r.created_at).toLocaleDateString()}</time>
+                        </div>
+                        <p className="mt-1 text-foreground">{r.comment}</p>
+                        {r.user_email && (
+                          <a
+                            href={`mailto:${r.user_email}?subject=${encodeURIComponent("Silyc — about your feedback")}`}
+                            className="mt-1 inline-block text-xs text-muted-foreground underline hover:text-foreground"
+                          >
+                            Reply to {r.user_email}
+                          </a>
+                        )}
+                      </li>
+                    );
+                  })}
                 {filtered.filter((r) => r.comment && r.comment.trim().length > 0).length === 0 && (
                   <li className="py-6 text-center text-muted-foreground">No comments yet</li>
                 )}

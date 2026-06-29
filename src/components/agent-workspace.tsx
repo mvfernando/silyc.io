@@ -278,13 +278,14 @@ export function AgentWorkspace() {
           try {
             let outputPath: string | null = null;
             if (r.render?.outputBlob) {
-              const outExt = r.render.outputMime?.includes("webm")
+              const mime = r.render.outputBlob.type || "video/mp4";
+              const outExt = mime.includes("webm")
                 ? "webm"
-                : r.render.outputMime?.includes("quicktime") ? "mov" : "mp4";
+                : mime.includes("quicktime") ? "mov" : "mp4";
               outputPath = `${userId}/${pid}/v-${Date.now()}.${outExt}`;
               await supabase.storage.from("videos").upload(outputPath, r.render.outputBlob, {
                 upsert: true,
-                contentType: r.render.outputMime ?? "video/mp4",
+                contentType: mime,
               });
             }
             await supabase.from("project_versions").insert({

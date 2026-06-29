@@ -8,6 +8,7 @@ import { useIsAdmin } from "@/hooks/use-is-admin";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Wordmark } from "@/components/wordmark";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
@@ -144,10 +145,9 @@ export function SiteHeader() {
         <Link
           to="/"
           aria-label="Silyc"
-          className="flex items-baseline font-black tracking-tight text-foreground leading-none text-xl rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span>silyc</span>
-          <span className="text-primary">.</span>
+          <Wordmark size="md" />
         </Link>
         {/* Desktop nav */}
         <nav aria-label={t.a11y_main_nav} className="hidden items-center gap-1 text-sm md:flex">

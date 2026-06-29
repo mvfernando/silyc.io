@@ -1,5 +1,6 @@
 import type { Lang } from "./i18n";
 import { InvalidPlanError } from "./agent/cut-planner/validator";
+import type { ValidationCode } from "./agent/cut-planner/contracts";
 
 export type MappedError = {
   title: string;
@@ -19,6 +20,17 @@ export function mapError(err: unknown, lang: Lang): MappedError {
 
   // Cut planner — structural validation failure (Sprint A).
   if (err instanceof InvalidPlanError) {
+    // Dominant code → friendly cause + concrete workaround.
+    const dominant = err.errorCodes[0];
+    const friendly = dominant ? INVALID_PLAN_COPY[dominant] : undefined;
+    if (friendly) {
+      return {
+        title: pick(lang, friendly.titlePt, friendly.titleEn),
+        cause: pick(lang, friendly.causePt, friendly.causeEn),
+        action: pick(lang, friendly.actionPt, friendly.actionEn),
+        raw,
+      };
+    }
     return {
       title: pick(lang, "Plano de cortes inválido", "Invalid cut plan"),
       cause: pick(
@@ -27,6 +39,17 @@ export function mapError(err: unknown, lang: Lang): MappedError {
         `The validator rejected the generated plan (${err.errorCodes.join(", ")}). Nothing was sent to the renderer.`,
       ),
       action: err.toActionableMessage(lang),
+      raw,
+    };
+  }
+
+  // Stringified INVALID_PLAN: segment_too_short (common surface in toasts).
+  if (m.includes("invalid_plan") && m.includes("segment_too_short")) {
+    const c = INVALID_PLAN_COPY.segment_too_short;
+    return {
+      title: pick(lang, c.titlePt, c.titleEn),
+      cause: pick(lang, c.causePt, c.causeEn),
+      action: pick(lang, c.actionPt, c.actionEn),
       raw,
     };
   }
@@ -55,13 +78,13 @@ export function mapError(err: unknown, lang: Lang): MappedError {
       title: pick(lang, "Tempo limite atingido", "Timed out"),
       cause: pick(
         lang,
-        "A renderização em nuvem demorou mais do que o esperado — o serviço pode estar sobrecarregado.",
-        "Cloud render took longer than expected — the service may be overloaded.",
+        "A renderização em nuvem demorou mais do que o esperado — arquivos grandes ou pico de uso no Shotstack costumam estourar a janela.",
+        "Cloud render took longer than expected — large files or Shotstack peak load usually blow past the window.",
       ),
       action: pick(
         lang,
-        "Tente novamente em alguns minutos ou desative a nuvem para processar localmente.",
-        "Try again in a few minutes or turn off cloud rendering to process locally.",
+        "Já caímos automaticamente para renderização local. Se preferir cloud, tente novamente em alguns minutos ou reduza a resolução de saída.",
+        "We already fell back to local rendering. To stay on cloud, retry in a few minutes or lower the export resolution.",
       ),
       raw,
     };

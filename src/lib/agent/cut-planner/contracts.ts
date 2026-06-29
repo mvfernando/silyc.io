@@ -193,5 +193,74 @@ export function hashIntent(intent: EditingIntent | undefined | null): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
+// ---------------------------------------------------------------------------
+// MediaFacts builder — used by the planner before WhisperX runs (Sprint B)
+// ---------------------------------------------------------------------------
+
+type UploadValidationLike = {
+  durationSec: number;
+  width: number;
+  height: number;
+  hasAudio: boolean | "unknown";
+  mime: string;
+  ext: string;
+};
+
+/**
+ * Build a best-effort MediaFacts from the browser-side upload validation.
+ *
+ * Fields that require FFprobe (real keyframe interval, codecs, bitrate) stay
+ * `null` until Sprint E wires the probe. The planner already documents this
+ * by logging when `keyframeIntervalSec` is null.
+ */
+export function mediaFactsFromUpload(
+  file: { name: string; size: number; type: string },
+  v: UploadValidationLike,
+  opts?: { fingerprint?: string; language?: string | null; fps?: number },
+): MediaFacts {
+  const codecGuess = guessCodec(v.ext || v.mime);
+  return {
+    source: {
+      fileName: file.name,
+      fileSizeBytes: file.size,
+      mimeType: file.type || v.mime || "video/mp4",
+      fingerprint: opts?.fingerprint ?? "",
+    },
+    container: {
+      format: (v.ext || "mp4").toLowerCase(),
+      durationSec: v.durationSec,
+      bitrateBps: null,
+    },
+    video:
+      v.width > 0 && v.height > 0
+        ? {
+            codec: codecGuess.video,
+            width: v.width,
+            height: v.height,
+            fps: opts?.fps ?? 30,
+            keyframeIntervalSec: null,
+          }
+        : null,
+    audio:
+      v.hasAudio === true
+        ? {
+            codec: codecGuess.audio,
+            sampleRateHz: 48_000,
+            channels: 2,
+            speakerCount: null,
+          }
+        : null,
+    language: opts?.language ?? null,
+  };
+}
+
+function guessCodec(ext: string): { video: string; audio: string } {
+  const e = (ext || "").toLowerCase();
+  if (e.includes("webm")) return { video: "vp9", audio: "opus" };
+  if (e.includes("mkv")) return { video: "h264", audio: "aac" };
+  if (e.includes("mov")) return { video: "h264", audio: "aac" };
+  return { video: "h264", audio: "aac" };
+}
+
 /** Re-exported so downstream modules don't import from "@/components/...". */
 export type { SilenceRange };

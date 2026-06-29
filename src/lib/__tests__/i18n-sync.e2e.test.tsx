@@ -89,7 +89,7 @@ describe("i18n sync (E2E behaviour)", () => {
     expect(screen.getByTestId("header-lang").textContent).toBe("en");
     expect(screen.getByTestId("header-signin").textContent).toBe("Sign in");
     expect(screen.getByTestId("menu").textContent).toBe("Sign out");
-    expect(screen.getByTestId("content").textContent).toBe("Get started free");
+    expect(screen.getByTestId("content").textContent).toBe("Start free");
     expect(window.localStorage.getItem("silentcut.lang")).toBe("en");
   });
 
@@ -104,7 +104,7 @@ describe("i18n sync (E2E behaviour)", () => {
       );
     });
     expect(screen.getByTestId("header-lang").textContent).toBe("en");
-    expect(screen.getByTestId("content").textContent).toBe("Get started free");
+    expect(screen.getByTestId("content").textContent).toBe("Start free");
   });
 
   it("hydrates from the server-stored preference after sign in", async () => {

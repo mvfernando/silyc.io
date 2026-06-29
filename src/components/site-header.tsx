@@ -141,23 +141,27 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/70 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-        <Link to="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-          <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-[11px] font-bold text-primary-foreground">
-            S
-          </span>
-          <span>Silyc</span>
+        <Link
+          to="/"
+          aria-label="Silyc"
+          className="flex items-baseline font-black tracking-tight text-foreground leading-none text-xl rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <span>silyc</span>
+          <span className="text-primary">.</span>
         </Link>
         {/* Desktop nav */}
         <nav aria-label={t.a11y_main_nav} className="hidden items-center gap-1 text-sm md:flex">
           {navLinks}
-          <button
-            type="button"
-            onClick={() => setLang(lang === "pt" ? "en" : "pt")}
-            className="ml-1 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            aria-label={lang === "pt" ? t.a11y_language_en : t.a11y_language_pt}
-          >
-            {lang}
-          </button>
+          {!user && !authLoading ? (
+            <button
+              type="button"
+              onClick={() => setLang(lang === "pt" ? "en" : "pt")}
+              className="ml-1 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              aria-label={lang === "pt" ? t.a11y_language_en : t.a11y_language_pt}
+            >
+              {lang}
+            </button>
+          ) : null}
           {authLoading ? (
             <div className="ml-2 flex items-center gap-2">
               <Skeleton className="h-7 w-7 rounded-full" />

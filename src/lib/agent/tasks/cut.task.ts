@@ -12,6 +12,7 @@
 import { chunksToSilences } from "@/lib/auto-cut";
 import { detectSilencesOnly } from "@/lib/ffmpeg-processor";
 import { planCuts } from "@/lib/agent/cut-planner";
+import { validatePlan } from "@/lib/agent/cut-planner/validator";
 import type { AgentInput, TaskParams, TaskResults } from "../types";
 
 export type CutCtx = {
@@ -47,6 +48,27 @@ export async function runCutTask(
         audioSampleRate: audio?.sampleRate,
       });
       for (const entry of plan.log) ctx.onLog(entry.message);
+
+      // Sprint A — validate the plan before we hand it to the renderer.
+      const report = validatePlan(plan, {
+        durationSec: total,
+        protectedHeadSec: ctx.params.headPaddingSec,
+        protectedTailSec: ctx.params.tailPaddingSec,
+      });
+      for (const issue of report.issues) {
+        ctx.onLog(`[validator:${issue.severity}] ${issue.code} — ${issue.message}`);
+      }
+      if (!report.ok) {
+        const err = new Error(
+          `INVALID_PLAN: ${report.issues
+            .filter((i) => i.severity === "error")
+            .map((i) => i.code)
+            .join(", ")}`,
+        );
+        (err as Error & { code?: string }).code = "INVALID_PLAN";
+        throw err;
+      }
+
       ctx.onProgress(1);
       return {
         silences: plan.silences,

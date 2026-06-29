@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects.$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminUsageRouteImport } from './routes/_authenticated/admin.usage'
@@ -50,6 +51,11 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
 const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
   id: '/$id',
@@ -94,19 +100,20 @@ export interface FileRoutesByFullPath {
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/app': typeof AuthenticatedAppRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/admin/feedback': typeof AuthenticatedAdminFeedbackRoute
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
@@ -122,6 +129,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
@@ -137,19 +145,20 @@ export interface FileRouteTypes {
     | '/admin/usage'
     | '/admin/users'
     | '/projects/$id'
+    | '/admin/'
     | '/admin/users/$id'
     | '/api/public/health/denoise'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
-    | '/admin'
     | '/app'
     | '/projects'
     | '/admin/feedback'
     | '/admin/usage'
     | '/admin/users'
     | '/projects/$id'
+    | '/admin'
     | '/admin/users/$id'
     | '/api/public/health/denoise'
   id:
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/usage'
     | '/_authenticated/admin/users'
     | '/_authenticated/projects/$id'
+    | '/_authenticated/admin/'
     | '/_authenticated/admin/users/$id'
     | '/api/public/health/denoise'
   fileRoutesById: FileRoutesById
@@ -218,6 +228,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin'
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin/': {
+      id: '/_authenticated/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/projects/$id': {
       id: '/_authenticated/projects/$id'
@@ -282,12 +299,14 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminFeedbackRoute: typeof AuthenticatedAdminFeedbackRoute
   AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRouteWithChildren
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminFeedbackRoute: AuthenticatedAdminFeedbackRoute,
   AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRouteWithChildren,
+  AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
 
 const AuthenticatedAdminRouteWithChildren =

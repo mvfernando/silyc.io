@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useBlocker } from "@tanstack/react-router";
+import { useNavigate, useBlocker, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 
@@ -122,6 +122,8 @@ export function AgentWorkspace() {
   const controllerRef = useRef<AgentController | null>(null);
   const localBlobRef = useRef<string | null>(null);
   const runIdRef = useRef<string | null>(null);
+  const projectIdRef = useRef<string | null>(null);
+  const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [rating, setRating] = useState<FeedbackRating | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const [interruptedSnapshot, setInterruptedSnapshot] = useState<AgentSnapshot | null>(null);
@@ -188,6 +190,8 @@ export function AgentWorkspace() {
       setCurrentTask(null);
       setRating(null);
       setInterruptedSnapshot(null);
+      projectIdRef.current = null;
+      setSavedProjectId(null);
       startedAtRef.current = Date.now();
       runIdRef.current =
         typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -196,6 +200,43 @@ export function AgentWorkspace() {
 
       const validation = await validateUpload(sourceFile).catch(() => null);
       const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id ?? null;
+
+      // Persist the project up-front so it appears in /projects even if the
+      // browser tab closes mid-run. Upload of source/output happens in
+      // parallel with the agent work — failures here never block the run.
+      if (userId) {
+        try {
+          const { data: project } = await supabase
+            .from("projects")
+            .insert({
+              user_id: userId,
+              name: sourceFile.name.replace(/\.[^.]+$/, "") || "Untitled",
+              status: "processing",
+              settings: { source: "agent", refinement },
+            })
+            .select("id")
+            .single();
+          if (project?.id) {
+            projectIdRef.current = project.id;
+            const ext = (sourceFile.name.split(".").pop() || "mp4").toLowerCase();
+            const sourcePath = `${userId}/${project.id}/source.${ext}`;
+            void supabase.storage
+              .from("videos")
+              .upload(sourcePath, sourceFile, { upsert: true, contentType: sourceFile.type })
+              .then(({ error }) => {
+                if (!error) {
+                  void supabase
+                    .from("projects")
+                    .update({ source_path: sourcePath })
+                    .eq("id", project.id);
+                }
+              });
+          }
+        } catch {
+          // non-fatal — the agent still runs, just won't be in /projects.
+        }
+      }
 
       const facts: AnalysisFacts = {
         fileName: sourceFile.name,
@@ -206,7 +247,7 @@ export function AgentWorkspace() {
       };
 
       const ctrl = runAgent(
-        { file: sourceFile, facts, refinement, userId: userData?.user?.id ?? null },
+        { file: sourceFile, facts, refinement, userId },
         {
           onEvent: (e: AgentEvent) => {
             if (e.type === "plan") setPlan(e.plan);
@@ -231,12 +272,64 @@ export function AgentWorkspace() {
           if (localBlobRef.current) URL.revokeObjectURL(localBlobRef.current);
           localBlobRef.current = URL.createObjectURL(r.render.outputBlob);
         }
+        // Persist output + version row (best-effort).
+        const pid = projectIdRef.current;
+        if (pid && userId) {
+          try {
+            let outputPath: string | null = null;
+            if (r.render?.outputBlob) {
+              const mime = r.render.outputBlob.type || "video/mp4";
+              const outExt = mime.includes("webm")
+                ? "webm"
+                : mime.includes("quicktime") ? "mov" : "mp4";
+              outputPath = `${userId}/${pid}/v-${Date.now()}.${outExt}`;
+              await supabase.storage.from("videos").upload(outputPath, r.render.outputBlob, {
+                upsert: true,
+                contentType: mime,
+              });
+            }
+            await supabase.from("project_versions").insert({
+              project_id: pid,
+              user_id: userId,
+              label: `Agent · ${new Date().toLocaleString()}`,
+              settings: { refinement, profile: r.audio?.profileUsed ?? null },
+              export_options: {},
+              output_path: outputPath,
+              stats: {
+                silencesRemoved: rec.silencesRemoved,
+                fillersRemoved: rec.fillersRemoved,
+                removedSec: rec.removedSec,
+                renderMode: r.render?.mode ?? null,
+              },
+              status: "done",
+            });
+            await supabase
+              .from("projects")
+              .update({ status: "done", output_path: outputPath ?? undefined })
+              .eq("id", pid);
+            setSavedProjectId(pid);
+          } catch {
+            // non-fatal
+          }
+        }
         setStage("ready");
         setShowRefine(false);
       } catch (err) {
         if (err instanceof Error && err.message === "cancelled") {
+          if (projectIdRef.current) {
+            void supabase
+              .from("projects")
+              .update({ status: "cancelled" })
+              .eq("id", projectIdRef.current);
+          }
           setStage("upload");
           return;
+        }
+        if (projectIdRef.current) {
+          void supabase
+            .from("projects")
+            .update({ status: "error" })
+            .eq("id", projectIdRef.current);
         }
         setError(err instanceof Error ? err.message : String(err));
         setStage("failed");
@@ -367,6 +460,7 @@ export function AgentWorkspace() {
             results={results}
             showRefine={showRefine}
             rating={rating}
+            savedProjectId={savedProjectId}
             onRate={(r) => {
               setRating(r);
               if (runIdRef.current) {
@@ -767,6 +861,7 @@ function ReadyStage({
   results,
   showRefine,
   rating,
+  savedProjectId,
   onRate,
   onAskRefine,
   onComment,
@@ -786,6 +881,7 @@ function ReadyStage({
   results: TaskResults | null;
   showRefine: boolean;
   rating: FeedbackRating | null;
+  savedProjectId: string | null;
   onRate: (r: FeedbackRating) => void;
   onAskRefine: () => void;
   onComment: (comment: string) => void;
@@ -906,6 +1002,17 @@ function ReadyStage({
           {t.agent_new_video}
         </Button>
       </div>
+      {savedProjectId && (
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          <Link
+            to="/projects/$id"
+            params={{ id: savedProjectId }}
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            Ver no histórico de projetos
+          </Link>
+        </p>
+      )}
 
       {/* Reaction row — 3 honest options, no thumbs-down */}
       <div className="mt-10 flex flex-col items-center gap-3">

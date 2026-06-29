@@ -95,6 +95,8 @@ export type TaskResults = {
     fillersRemoved: number;
     /** Total seconds that will be removed from the original timeline. */
     removedSec: number;
+    /** Optional plan from the new cut-planner (decisions, segments, log). */
+    plan?: import("./cut-planner/types").CutPlan;
   };
   audio?: {
     /** Signed URL of the enhanced audio track. */

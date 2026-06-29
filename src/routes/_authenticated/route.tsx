@@ -1,6 +1,8 @@
 import { createFileRoute, Outlet, redirect, Link, useRouter } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
+import { useQuery } from "@tanstack/react-query";
+import { getMyQuota } from "@/lib/quota.functions";
 
 function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
@@ -19,6 +21,14 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
   const counts = (error?.message ?? "").match(/\((\d+)\/(\d+)\)/);
   const quotaUsed = counts ? Number(counts[1]) : null;
   const quotaLimit = counts ? Number(counts[2]) : null;
+
+  const quotaQuery = useQuery({
+    queryKey: ["quota-reset", provider],
+    enabled: isRateLimit,
+    retry: 1,
+    staleTime: 30_000,
+    queryFn: () => getMyQuota({ data: { integration: provider } }),
+  });
 
   const title = isAuth
     ? t.auth_required_title
@@ -109,6 +119,20 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
             <p className="mt-1 text-xs text-muted-foreground/80">
               {isHourly ? t.rate_limit_reset_hour : t.rate_limit_reset_day}
             </p>
+            <div aria-live="polite" className="mt-2 border-t border-border/60 pt-2 text-xs">
+              {quotaQuery.isLoading ? (
+                <span className="text-muted-foreground/70">…</span>
+              ) : quotaQuery.isError ? (
+                <span className="text-destructive" role="alert">
+                  {t.rate_limit_quota_unavailable}
+                </span>
+              ) : quotaQuery.data ? (
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>/h: <span className="font-mono text-foreground">{quotaQuery.data.hourUsed}/{quotaQuery.data.hourLimit}</span></span>
+                  <span>/24h: <span className="font-mono text-foreground">{quotaQuery.data.dayUsed}/{quotaQuery.data.dayLimit}</span></span>
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
             <button

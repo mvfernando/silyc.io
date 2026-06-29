@@ -420,6 +420,8 @@ const dict = {
     error_friendly_desc: "Tente novamente em alguns segundos. Se persistir, volte ao início.",
     error_retry: "Tentar de novo",
     error_home: "Ir para o início",
+    rate_limit_title: "Limite de uso atingido",
+    rate_limit_desc: "Você atingiu o limite por hora ou por dia para esta integração. Tente novamente mais tarde ou continue usando o processamento local.",
   },
   en: {
     nav_app: "App",

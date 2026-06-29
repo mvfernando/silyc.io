@@ -221,8 +221,31 @@ function ProjectDetail() {
     if (!project) return;
     (async () => {
       const next: { source?: string; output?: string } = {};
-      if (project.source_path) {
-        const { data } = await supabase.storage.from("videos").createSignedUrl(project.source_path, 3600);
+      // Resolve source URL: prefer the saved path, otherwise probe the
+      // predictable upload path `{userId}/{projectId}/source.{ext}`.
+      // The agent uploads the source in the background, so source_path
+      // can stay null if the user navigates away mid-run — we recover it
+      // here so "before/after" comparison shows up automatically.
+      let sourcePath = project.source_path as string | null;
+      if (!sourcePath && project.user_id && project.id) {
+        for (const ext of ["mp4", "mov", "webm", "mkv", "m4v"]) {
+          const candidate = `${project.user_id}/${project.id}/source.${ext}`;
+          const { data, error } = await supabase.storage
+            .from("videos")
+            .createSignedUrl(candidate, 3600);
+          if (!error && data?.signedUrl) {
+            sourcePath = candidate;
+            // Best-effort backfill so we don't probe again next render.
+            void supabase
+              .from("projects")
+              .update({ source_path: candidate })
+              .eq("id", project.id);
+            next.source = data.signedUrl;
+            break;
+          }
+        }
+      } else if (sourcePath) {
+        const { data } = await supabase.storage.from("videos").createSignedUrl(sourcePath, 3600);
         next.source = data?.signedUrl;
       }
       if (activeOutputPath) {

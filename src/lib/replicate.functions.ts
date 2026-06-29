@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const REPLICATE_BASE = "https://api.replicate.com/v1";
 
@@ -69,6 +70,7 @@ function toStatus(p: PredictionResponse): EnhanceJobStatus {
 }
 
 export const startEnhanceAudio = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: { audioUrl: string }) => input)
   .handler(async ({ data }): Promise<EnhanceJobStatus> => {
     const token = process.env.REPLICATE_API_TOKEN;
@@ -97,6 +99,7 @@ export const startEnhanceAudio = createServerFn({ method: "POST" })
   });
 
 export const pollEnhanceAudio = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data }): Promise<EnhanceJobStatus> => {
     const token = process.env.REPLICATE_API_TOKEN;
@@ -112,6 +115,7 @@ export const pollEnhanceAudio = createServerFn({ method: "POST" })
   });
 
 export const cancelEnhanceAudio = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data }): Promise<EnhanceJobStatus> => {
     const token = process.env.REPLICATE_API_TOKEN;
@@ -222,6 +226,7 @@ function toTranscription(p: PredictionResponse): TranscriptionJobStatus {
 }
 
 export const startTranscription = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: { audioUrl: string; language?: string | null }) => input)
   .handler(async ({ data }): Promise<TranscriptionJobStatus> => {
     const token = process.env.REPLICATE_API_TOKEN;
@@ -258,6 +263,7 @@ export const startTranscription = createServerFn({ method: "POST" })
   });
 
 export const pollTranscription = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data }): Promise<TranscriptionJobStatus> => {
     const token = process.env.REPLICATE_API_TOKEN;
@@ -277,6 +283,7 @@ export const pollTranscription = createServerFn({ method: "POST" })
   });
 
 export const cancelTranscription = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: { id: string }) => input)
   .handler(async ({ data }): Promise<TranscriptionJobStatus> => {
     const token = process.env.REPLICATE_API_TOKEN;

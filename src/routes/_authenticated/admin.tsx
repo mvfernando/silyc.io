@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { SiteHeader } from "@/components/site-header";
-import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Spinner } from "@/components/spinner";
+import { listFeedbackWithUsers, type FeedbackRowAdmin } from "@/lib/admin-feedback.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Silyc — Admin" }] }),
@@ -13,14 +14,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 type Period = "7d" | "30d" | "90d" | "all";
 
-interface FeedbackRow {
-  run_id: string;
-  rating: number | null;
-  refinement_choice: string | null;
-  format: string | null;
-  comment: string | null;
-  created_at: string;
-}
+type FeedbackRow = FeedbackRowAdmin;
 
 const REACTION_LABEL: Record<number, { emoji: string; label: string }> = {
   1: { emoji: "😕", label: "Needs work" },
@@ -48,21 +42,13 @@ function AdminPage() {
   const { data: isAdmin, isLoading: roleLoading } = useIsAdmin();
   const [period, setPeriod] = useState<Period>("30d");
   const [formatFilter, setFormatFilter] = useState<string>("all");
+  const fetchFeedback = useServerFn(listFeedbackWithUsers);
 
   const { data: rows, isLoading } = useQuery({
     queryKey: ["admin-feedback", period],
     enabled: !!isAdmin,
     queryFn: async (): Promise<FeedbackRow[]> => {
-      let q = supabase
-        .from("pipeline_feedback" as never)
-        .select("run_id, rating, refinement_choice, format, comment, created_at")
-        .order("created_at", { ascending: false })
-        .limit(2000);
-      const since = periodStart(period);
-      if (since) q = q.gte("created_at", since);
-      const { data, error } = await q;
-      if (error) throw error;
-      return (data as unknown as FeedbackRow[]) ?? [];
+      return await fetchFeedback({ data: { since: periodStart(period) } });
     },
   });
 

@@ -8,6 +8,11 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
   const msg = (error?.message ?? "").toLowerCase();
   const isAuth = /unauthorized|not authenticated|no authorization|401|jwt/.test(msg);
   const isCredits = /\b402\b|insufficient credit|purchase credit|billing|payment required/.test(msg);
+  const provider = /shotstack/i.test(error?.message ?? "")
+    ? "shotstack"
+    : /fal\b|fal\.ai/i.test(error?.message ?? "")
+    ? "fal"
+    : "replicate";
 
   const title = isAuth
     ? t.auth_required_title
@@ -20,8 +25,66 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
     ? t.credits_required_desc
     : t.error_friendly_desc;
 
+  if (isCredits) {
+    return (
+      <div
+        role="alert"
+        aria-live="assertive"
+        className="flex min-h-[60vh] items-center justify-center px-4"
+      >
+        <div className="max-w-lg rounded-lg border border-border/60 bg-card p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div
+              aria-hidden="true"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-500/15 text-amber-500"
+            >
+              !
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-semibold text-foreground">{title}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+              <p className="mt-2 text-xs text-muted-foreground/80">
+                {provider === "shotstack" ? t.credits_provider_shotstack : t.credits_provider_replicate}
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <a
+                  href={
+                    provider === "shotstack"
+                      ? "https://dashboard.shotstack.io/billing"
+                      : "https://replicate.com/account/billing"
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  {t.credits_open_billing}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    router.invalidate();
+                    reset();
+                  }}
+                  className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  {t.credits_retry_later}
+                </button>
+                <Link
+                  to="/app"
+                  className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  {t.credits_local_fallback}
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-[60vh] items-center justify-center px-4">
+    <div role="alert" aria-live="polite" className="flex min-h-[60vh] items-center justify-center px-4">
       <div className="max-w-md rounded-lg border border-border/60 bg-card p-6 text-center shadow-sm">
         <h1 className="text-lg font-semibold text-foreground">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{desc}</p>
@@ -29,7 +92,7 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
           {isAuth ? (
             <Link
               to="/auth"
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               {t.auth_required_cta}
             </Link>
@@ -40,14 +103,14 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
                 router.invalidate();
                 reset();
               }}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               {t.error_retry}
             </button>
           )}
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             {t.error_home}
           </Link>

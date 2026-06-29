@@ -125,6 +125,7 @@ export function AgentWorkspace() {
   const [rating, setRating] = useState<FeedbackRating | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const [interruptedSnapshot, setInterruptedSnapshot] = useState<AgentSnapshot | null>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
 
   // On mount, check if a previous run was interrupted (snapshot stayed at
   // "working"). We can't truly resume — show a banner so the user understands
@@ -272,31 +273,37 @@ export function AgentWorkspace() {
           ended without reaching ready/failed (tab closed, crash, etc.). */}
       {stage === "upload" && interruptedSnapshot && (
         <div className="mx-auto max-w-3xl px-6 pt-6">
-          <div
-            role="status"
-            className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-3"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-foreground">
-                {t.agent_resume_banner_title}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t.agent_resume_banner_desc
-                  .replace("{file}", interruptedSnapshot.fileName)
-                  .replace("{pct}", String(Math.round(interruptedSnapshot.progress * 100)))}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                clearSnapshot();
-                setInterruptedSnapshot(null);
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-            >
-              {t.agent_resume_banner_dismiss}
-            </button>
-          </div>
+          <ResumeBanner
+            t={t}
+            snapshot={interruptedSnapshot}
+            onResume={() => resumeInputRef.current?.click()}
+            onDismiss={() => {
+              clearSnapshot();
+              setInterruptedSnapshot(null);
+            }}
+          />
+          <input
+            ref={resumeInputRef}
+            type="file"
+            accept="video/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              if (
+                interruptedSnapshot &&
+                (f.name !== interruptedSnapshot.fileName ||
+                  f.size !== interruptedSnapshot.fileSize)
+              ) {
+                toast.warning(t.agent_resume_banner_title, {
+                  description: t.agent_resume_banner_desc
+                    .replace("{file}", interruptedSnapshot.fileName)
+                    .replace("{pct}", String(Math.round(interruptedSnapshot.progress * 100))),
+                });
+              }
+              void handleFile(f);
+            }}
+          />
         </div>
       )}
 

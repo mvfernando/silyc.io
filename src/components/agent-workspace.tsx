@@ -525,6 +525,7 @@ function WorkingStage({
   done,
   logs,
   showLogs,
+  startedAt,
   onToggleLogs,
   onCancel,
 }: {
@@ -537,11 +538,25 @@ function WorkingStage({
   done: Set<TaskId>;
   logs: string[];
   showLogs: boolean;
+  startedAt: number | null;
   onToggleLogs: () => void;
   onCancel: () => void;
 }) {
   const label = currentTask ? taskLabels[currentTask] : t.agent_preparing;
   const pct = Math.round(progress * 100);
+
+  // Live elapsed / ETA tick — recomputed every second on the client.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const elapsedMs = startedAt ? now - startedAt : 0;
+  const elapsedLabel = formatElapsed(elapsedMs);
+  const etaLabel =
+    startedAt && pct >= 10 && pct < 100
+      ? formatElapsed(Math.max(0, (elapsedMs / pct) * (100 - pct)))
+      : null;
 
   return (
     <motion.div
@@ -568,8 +583,19 @@ function WorkingStage({
         <Progress value={pct} className="h-1.5" />
         <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
           <span>{pct}%</span>
-          <span>
-            {done.size}/{plan?.steps.length ?? 0} {t.agent_steps_of}
+          <span className="flex items-center gap-3">
+            <span>
+              {done.size}/{plan?.steps.length ?? 0} {t.agent_steps_of}
+            </span>
+            {startedAt && (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span>
+                  {elapsedLabel} {t.agent_elapsed}
+                  {etaLabel ? ` · ${etaLabel} ${t.agent_eta}` : ""}
+                </span>
+              </>
+            )}
           </span>
         </div>
       </div>
@@ -591,6 +617,14 @@ function WorkingStage({
       )}
     </motion.div>
   );
+}
+
+function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
 }
 
 /* ------------------------------------------------------------------ */

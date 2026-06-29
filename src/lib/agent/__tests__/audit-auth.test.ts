@@ -71,7 +71,11 @@ describe("integration files keep audit middleware in front of paid calls", () =>
       expect(middlewares.length).toBeGreaterThan(0);
       for (const m of middlewares) {
         expect(m).toMatch(/auditAuth\("(replicate|fal|shotstack)"\)/);
-        expect(m.indexOf("auditAuth")).toBeLessThan(m.indexOf("requireSupabaseAuth"));
+        // rateLimit transitively pulls in requireSupabaseAuth; auditAuth must
+        // still come first so unauthenticated calls are logged + rejected
+        // before the auth + rate-limit chain runs.
+        expect(m).toMatch(/rateLimit\("(replicate|fal|shotstack)"\)/);
+        expect(m.indexOf("auditAuth")).toBeLessThan(m.indexOf("rateLimit"));
       }
     });
   }

@@ -1,4 +1,5 @@
 import type { Lang } from "./i18n";
+import { InvalidPlanError } from "./agent/cut-planner/validator";
 
 export type MappedError = {
   title: string;
@@ -15,6 +16,38 @@ function pick(lang: Lang, pt: string, en: string): string {
 export function mapError(err: unknown, lang: Lang): MappedError {
   const raw = err instanceof Error ? err.message : String(err ?? "");
   const m = raw.toLowerCase();
+
+  // Cut planner — structural validation failure (Sprint A).
+  if (err instanceof InvalidPlanError) {
+    return {
+      title: pick(lang, "Plano de cortes inválido", "Invalid cut plan"),
+      cause: pick(
+        lang,
+        `O validador rejeitou o plano gerado (${err.errorCodes.join(", ")}). Nada foi enviado para o renderizador.`,
+        `The validator rejected the generated plan (${err.errorCodes.join(", ")}). Nothing was sent to the renderer.`,
+      ),
+      action: err.toActionableMessage(lang),
+      raw,
+    };
+  }
+
+  // Fallback: stringified INVALID_PLAN from older callers.
+  if (m.startsWith("invalid_plan")) {
+    return {
+      title: pick(lang, "Plano de cortes inválido", "Invalid cut plan"),
+      cause: pick(
+        lang,
+        "O validador rejeitou o plano antes da renderização.",
+        "The validator rejected the plan before rendering.",
+      ),
+      action: pick(
+        lang,
+        "Reduza a agressividade do preset, aumente o padding em torno da fala e reprocessse.",
+        "Lower the preset aggressiveness, increase padding around speech and reprocess.",
+      ),
+      raw,
+    };
+  }
 
   // Cloud / network timeouts
   if (m.includes("timeout") || m.includes("timed out") || m.includes("tempo máximo")) {

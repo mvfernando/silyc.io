@@ -316,10 +316,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      check_and_record_usage: {
-        Args: { _day_limit: number; _hour_limit: number; _integration: string }
-        Returns: Json
-      }
+      [_ in never]: never
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"

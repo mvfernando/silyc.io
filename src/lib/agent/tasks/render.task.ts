@@ -123,11 +123,32 @@ async function runCloud(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<
 
   // 3. poll
   const startedAt = Date.now();
-  const timeoutMs = 8 * 60 * 1000;
+  // Adaptive timeout: cloud render needs time to (1) ingest the signed URL,
+  // (2) decode + cut, (3) encode + upload back. Big files were consistently
+  // hitting the old 8-min ceiling. Scale by source size and duration:
+  //   base 8 min + 1 min per 100 MB + 4x realtime of the source.
+  // Floor 8 min, ceiling 25 min so a stuck job still fails cleanly.
+  const sizeMin = (input.file.size / (100 * 1024 * 1024));
+  const durMin = (ctx.cut.durationSec / 60) * 4;
+  const timeoutMs = Math.min(
+    25 * 60 * 1000,
+    Math.max(8 * 60 * 1000, Math.round((8 + sizeMin + durMin) * 60 * 1000)),
+  );
+  ctx.onLog(
+    `cloud timeout window: ${(timeoutMs / 60000).toFixed(1)} min ` +
+    `(file ${(input.file.size / 1024 / 1024).toFixed(0)} MB, ` +
+    `source ${Math.round(ctx.cut.durationSec)}s)`,
+  );
   let delay = 3000;
   while (true) {
     if (ctx.isCancelled()) throw new Error("cancelled");
-    if (Date.now() - startedAt > timeoutMs) throw new Error("cloud render timeout");
+    if (Date.now() - startedAt > timeoutMs) {
+      const mins = ((Date.now() - startedAt) / 60000).toFixed(1);
+      throw new Error(
+        `cloud render timeout after ${mins} min — the source is large or Shotstack is overloaded. ` +
+        `Falling back to local render.`,
+      );
+    }
     await new Promise((r) => setTimeout(r, delay));
     delay = Math.min(delay + 1500, 8000);
     const status = await pollShotstackRender({ data: { id: job.id } });

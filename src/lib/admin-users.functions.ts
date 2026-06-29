@@ -192,7 +192,7 @@ export type AuditEntry = {
   actor_id: string | null;
   actor_email: string | null;
   action: string;
-  details: Record<string, unknown>;
+  details: { reason: string | null };
   created_at: string;
 };
 
@@ -258,7 +258,7 @@ export const getUserDetail = createServerFn({ method: "GET" })
     }).from("pipeline_feedback").select("id, run_id, rating, format, refinement_choice, comment, created_at").eq("user_id", u.id).order("created_at", { ascending: false }).limit(200);
 
     const { data: auditData } = await (supabaseAdmin as unknown as {
-      from: (t: string) => { select: (s: string) => { eq: (c: string, v: string) => { order: (c: string, o: { ascending: boolean }) => { limit: (n: number) => Promise<{ data: Array<{ id: string; actor_id: string | null; action: string; details: Record<string, unknown>; created_at: string }> | null }> } } } };
+      from: (t: string) => { select: (s: string) => { eq: (c: string, v: string) => { order: (c: string, o: { ascending: boolean }) => { limit: (n: number) => Promise<{ data: Array<{ id: string; actor_id: string | null; action: string; details: { reason?: string | null } | null; created_at: string }> | null }> } } } };
     }).from("admin_audit_log").select("id, actor_id, action, details, created_at").eq("target_user_id", u.id).order("created_at", { ascending: false }).limit(50);
 
     // Resolve actor emails
@@ -282,7 +282,7 @@ export const getUserDetail = createServerFn({ method: "GET" })
       actor_id: a.actor_id,
       actor_email: a.actor_id ? actorMap.get(a.actor_id) ?? null : null,
       action: a.action,
-      details: a.details ?? {},
+      details: { reason: (a.details?.reason as string | null | undefined) ?? null },
       created_at: a.created_at,
     }));
 

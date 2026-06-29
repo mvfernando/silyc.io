@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkAndRecordUsage, rateLimitErrorMessage, RATE_LIMITS } from "../rate-limit";
+import { checkAndRecordUsage, rateLimitErrorMessage } from "../rate-limit";
 
 function mockAdmin(response: { data: unknown; error: { message: string } | null }) {
   const rpc = vi.fn().mockResolvedValue(response);
@@ -19,8 +19,8 @@ describe("checkAndRecordUsage", () => {
     expect(rpc).toHaveBeenCalledWith("check_and_record_usage", {
       _user_id: "user-1",
       _integration: "replicate",
-      _hour_limit: RATE_LIMITS.replicate.hour,
-      _day_limit: RATE_LIMITS.replicate.day,
+      _hour_limit: null,
+      _day_limit: null,
     });
   });
 

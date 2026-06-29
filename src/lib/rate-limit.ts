@@ -18,6 +18,9 @@ export type RateLimitDecision =
     };
 
 export const RATE_LIMITS = {
+  // Fallback only — the real caps live in public.integration_caps and are
+  // resolved by private.check_and_record_usage. These exist so unit tests
+  // and offline tooling keep working when the DB is unreachable.
   replicate: { hour: 30, day: 200 },
   fal: { hour: 30, day: 200 },
   shotstack: { hour: 10, day: 50 },
@@ -28,8 +31,8 @@ export type RateLimitedIntegration = keyof typeof RATE_LIMITS;
 type Rpc = (args: {
   _user_id: string;
   _integration: string;
-  _hour_limit: number;
-  _day_limit: number;
+  _hour_limit?: number | null;
+  _day_limit?: number | null;
 }) => Promise<{ data: unknown; error: { message: string } | null }>;
 
 type SchemaClient = { rpc: (name: string, args: Record<string, unknown>) => ReturnType<Rpc> };
@@ -40,12 +43,12 @@ export async function checkAndRecordUsage(
   userId: string,
   integration: RateLimitedIntegration,
 ): Promise<RateLimitDecision> {
-  const limits = RATE_LIMITS[integration];
   const { data, error } = await admin.schema("private").rpc("check_and_record_usage", {
     _user_id: userId,
     _integration: integration,
-    _hour_limit: limits.hour,
-    _day_limit: limits.day,
+    // null → caps row in public.integration_caps wins (admin-configurable)
+    _hour_limit: null,
+    _day_limit: null,
   });
   if (error) {
     // Fail open ONLY for transient infra errors — log loudly.

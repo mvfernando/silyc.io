@@ -87,9 +87,9 @@ function Hero({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.05 }}
-          className="font-display text-[14vw] font-extrabold leading-[0.85] tracking-[-0.04em] md:text-[9rem]"
+          className="font-display text-[14vw] font-black leading-[0.85] tracking-[-0.04em] md:text-[9rem]"
         >
-          Silyc<span className="text-primary">.</span>
+          silyc<span className="text-primary">.</span>
         </motion.h1>
 
         <motion.p

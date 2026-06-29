@@ -14,6 +14,11 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
     : /fal\b|fal\.ai/i.test(error?.message ?? "")
     ? "fal"
     : "replicate";
+  const isHourly = /hourly cap/i.test(msg);
+  // The middleware formats: "(used/limit)" — extract for the panel.
+  const counts = (error?.message ?? "").match(/\((\d+)\/(\d+)\)/);
+  const quotaUsed = counts ? Number(counts[1]) : null;
+  const quotaLimit = counts ? Number(counts[2]) : null;
 
   const title = isAuth
     ? t.auth_required_title
@@ -82,6 +87,46 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
                 </Link>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isRateLimit) {
+    return (
+      <div role="alert" aria-live="assertive" className="flex min-h-[60vh] items-center justify-center px-4">
+        <div className="max-w-lg rounded-lg border border-border/60 bg-card p-6 shadow-sm">
+          <h1 className="text-lg font-semibold text-foreground">{title}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+          <div className="mt-4 rounded-md border border-border/60 bg-muted/40 p-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">{provider}</span>
+              <span className="font-mono text-foreground">
+                {quotaUsed ?? "?"}/{quotaLimit ?? "?"} {isHourly ? "/h" : "/24h"}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground/80">
+              {isHourly ? t.rate_limit_reset_hour : t.rate_limit_reset_day}
+            </p>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                router.invalidate();
+                reset();
+              }}
+              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              {t.try_again}
+            </button>
+            <Link
+              to="/app"
+              className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              {t.credits_local_fallback}
+            </Link>
           </div>
         </div>
       </div>

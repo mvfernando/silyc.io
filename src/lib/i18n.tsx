@@ -422,6 +422,20 @@ const dict = {
     error_home: "Ir para o início",
     rate_limit_title: "Limite de uso atingido",
     rate_limit_desc: "Você atingiu o limite por hora ou por dia para esta integração. Tente novamente mais tarde ou continue usando o processamento local.",
+    rate_limit_reset_hour: "A quota é restaurada a cada hora.",
+    rate_limit_reset_day: "A quota diária é restaurada a cada 24 horas.",
+    admin_usage_title: "Uso por integração",
+    admin_usage_desc: "Histórico de chamadas por usuário e integração.",
+    admin_usage_from: "De",
+    admin_usage_to: "Até",
+    admin_usage_integration: "Integração",
+    admin_usage_all: "Todas",
+    admin_usage_user: "Usuário",
+    admin_usage_count_1h: "1h",
+    admin_usage_count_24h: "24h",
+    admin_usage_count_total: "Total no período",
+    admin_usage_export_csv: "Exportar CSV",
+    admin_usage_empty: "Nenhuma chamada registrada no período selecionado.",
   },
   en: {
     nav_app: "App",
@@ -840,6 +854,20 @@ const dict = {
     error_home: "Go home",
     rate_limit_title: "Usage limit reached",
     rate_limit_desc: "You hit the hourly or daily cap for this integration. Try again later or keep going with local processing.",
+    rate_limit_reset_hour: "The quota resets every hour.",
+    rate_limit_reset_day: "The daily quota resets every 24 hours.",
+    admin_usage_title: "Integration usage",
+    admin_usage_desc: "Per-user, per-integration call history.",
+    admin_usage_from: "From",
+    admin_usage_to: "To",
+    admin_usage_integration: "Integration",
+    admin_usage_all: "All",
+    admin_usage_user: "User",
+    admin_usage_count_1h: "1h",
+    admin_usage_count_24h: "24h",
+    admin_usage_count_total: "Total in range",
+    admin_usage_export_csv: "Export CSV",
+    admin_usage_empty: "No calls in the selected range.",
   },
 } as const;
 
@@ -866,6 +894,21 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setLangState(detect());
+    if (typeof window === "undefined") return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== "silentcut.lang") return;
+      if (e.newValue === "pt" || e.newValue === "en") setLangState(e.newValue);
+    };
+    const onCustom = (e: Event) => {
+      const detail = (e as CustomEvent<Lang>).detail;
+      if (detail === "pt" || detail === "en") setLangState(detail);
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("silyc:lang-changed", onCustom as EventListener);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("silyc:lang-changed", onCustom as EventListener);
+    };
   }, []);
 
   // When a session exists, prefer the server-stored preference and keep it in sync.
@@ -902,7 +945,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const setLang = (l: Lang) => {
     setLangState(l);
-    if (typeof window !== "undefined") window.localStorage.setItem("silentcut.lang", l);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("silentcut.lang", l);
+      window.dispatchEvent(new CustomEvent<Lang>("silyc:lang-changed", { detail: l }));
+    }
     // Best-effort persist for signed-in users; ignore errors (offline / not auth'd).
     void (async () => {
       try {

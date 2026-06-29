@@ -85,14 +85,16 @@ export function SiteHeader() {
       <Link
         to="/app"
         onClick={() => setMobileOpen(false)}
-        className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted ${pathname === "/app" ? "text-foreground" : "text-muted-foreground"}`}
+        aria-current={pathname === "/app" ? "page" : undefined}
+        className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${pathname === "/app" ? "text-foreground" : "text-muted-foreground"}`}
       >
         {t.nav_app}
       </Link>
       <Link
         to="/projects"
         onClick={() => setMobileOpen(false)}
-        className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted ${pathname.startsWith("/projects") ? "text-foreground" : "text-muted-foreground"}`}
+        aria-current={pathname.startsWith("/projects") ? "page" : undefined}
+        className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${pathname.startsWith("/projects") ? "text-foreground" : "text-muted-foreground"}`}
       >
         {t.nav_projects}
       </Link>
@@ -100,7 +102,8 @@ export function SiteHeader() {
         <Link
           to="/admin"
           onClick={() => setMobileOpen(false)}
-          className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted ${pathname.startsWith("/admin") ? "text-foreground" : "text-muted-foreground"}`}
+          aria-current={pathname.startsWith("/admin") ? "page" : undefined}
+          className={`rounded-md px-3 py-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${pathname.startsWith("/admin") ? "text-foreground" : "text-muted-foreground"}`}
         >
           {t.nav_admin}
         </Link>
@@ -145,13 +148,13 @@ export function SiteHeader() {
           <span>Silyc</span>
         </Link>
         {/* Desktop nav */}
-        <nav className="hidden items-center gap-1 text-sm md:flex">
+        <nav aria-label={t.a11y_main_nav} className="hidden items-center gap-1 text-sm md:flex">
           {navLinks}
           <button
             type="button"
             onClick={() => setLang(lang === "pt" ? "en" : "pt")}
-            className="ml-1 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Toggle language"
+            className="ml-1 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label={lang === "pt" ? t.a11y_language_en : t.a11y_language_pt}
           >
             {lang}
           </button>
@@ -165,8 +168,8 @@ export function SiteHeader() {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="ml-2 flex items-center gap-2 rounded-full p-0.5 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={displayName || "Account"}
+                  className="ml-2 flex items-center gap-2 rounded-full p-0.5 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  aria-label={`${t.a11y_user_menu}${displayName ? ` — ${displayName}` : ""}`}
                 >
                   <Avatar className="h-7 w-7">
                     {avatarUrl ? (
@@ -224,7 +227,7 @@ export function SiteHeader() {
           ) : (
             <Link
               to="/auth"
-              className="ml-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="ml-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               {t.nav_signin}
             </Link>
@@ -255,7 +258,9 @@ export function SiteHeader() {
               <button
                 type="button"
                 aria-label={t.account_open_menu}
-                className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-haspopup="dialog"
+                aria-expanded={mobileOpen}
+                className="grid h-11 w-11 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="4" y1="6" x2="20" y2="6" />
@@ -264,7 +269,7 @@ export function SiteHeader() {
                 </svg>
               </button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[300px] sm:w-[340px]">
+            <SheetContent side="right" aria-label={t.account_menu} className="w-[300px] sm:w-[340px]">
               <div className="flex h-full flex-col gap-4 pt-6">
                 {authLoading ? (
                   <div className="flex items-center gap-3">
@@ -286,7 +291,7 @@ export function SiteHeader() {
                   </Link>
                 )}
 
-                <nav className="flex flex-col gap-1 text-sm">{navLinks}</nav>
+                <nav aria-label={t.a11y_main_nav} className="flex flex-col gap-1 text-sm">{navLinks}</nav>
 
                 <div className="mt-auto space-y-2 border-t border-border/60 pt-3">
                   <div className="px-1 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -300,7 +305,9 @@ export function SiteHeader() {
                           key={l}
                           type="button"
                           onClick={() => setLang(l)}
-                          className={`rounded px-2 py-1 text-xs uppercase ${lang === l ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                          aria-pressed={lang === l}
+                          aria-label={l === "pt" ? t.a11y_language_pt : t.a11y_language_en}
+                          className={`rounded px-2 py-1 text-xs uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${lang === l ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
                         >
                           {l}
                         </button>
@@ -311,7 +318,7 @@ export function SiteHeader() {
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      className="w-full rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+                      className="w-full rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                       {t.nav_signout}
                     </button>

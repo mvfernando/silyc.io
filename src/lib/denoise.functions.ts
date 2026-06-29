@@ -14,6 +14,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { auditAuth } from "@/lib/audit-auth.middleware";
 
 const REPLICATE_BASE = "https://api.replicate.com/v1";
 const RESEMBLE_ENHANCE_VERSION =
@@ -51,7 +52,7 @@ async function pollReplicate(id: string, token: string, deadlineMs: number): Pro
 }
 
 export const denoiseAudioReplicate = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([auditAuth("replicate"), requireSupabaseAuth])
   .inputValidator((input: { audioUrl: string; timeoutMs?: number }) => input)
   .handler(async ({ data }): Promise<{ url: string; provider: "replicate"; predictionId: string }> => {
     const token = process.env.REPLICATE_API_TOKEN;
@@ -112,7 +113,7 @@ async function pollFal(model: string, requestId: string, key: string, deadlineMs
 }
 
 export const denoiseAudioFal = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([auditAuth("fal"), requireSupabaseAuth])
   .inputValidator((input: { audioUrl: string; timeoutMs?: number }) => input)
   .handler(async ({ data }): Promise<{ url: string; provider: "fal"; requestId: string }> => {
     const key = process.env.FAL_KEY;
@@ -143,7 +144,7 @@ export const denoiseAudioFal = createServerFn({ method: "POST" })
  * "not configured" error per attempt.
  */
 export const denoiseProvidersStatus = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([auditAuth("replicate"), requireSupabaseAuth])
   .handler(async (): Promise<{ replicate: boolean; fal: boolean }> => ({
     replicate: Boolean(process.env.REPLICATE_API_TOKEN),
     fal: Boolean(process.env.FAL_KEY),

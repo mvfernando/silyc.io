@@ -8,6 +8,7 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
   const msg = (error?.message ?? "").toLowerCase();
   const isAuth = /unauthorized|not authenticated|no authorization|401|jwt/.test(msg);
   const isCredits = /\b402\b|insufficient credit|purchase credit|billing|payment required/.test(msg);
+  const isRateLimit = /\b429\b|rate limit|hourly cap|daily cap/.test(msg);
   const provider = /shotstack/i.test(error?.message ?? "")
     ? "shotstack"
     : /fal\b|fal\.ai/i.test(error?.message ?? "")
@@ -18,11 +19,15 @@ function AuthErrorBoundary({ error, reset }: { error: Error; reset: () => void }
     ? t.auth_required_title
     : isCredits
     ? t.credits_required_title
+    : isRateLimit
+    ? t.rate_limit_title
     : t.error_friendly_title;
   const desc = isAuth
     ? t.auth_required_desc
     : isCredits
     ? t.credits_required_desc
+    : isRateLimit
+    ? t.rate_limit_desc
     : t.error_friendly_desc;
 
   if (isCredits) {

@@ -1,4 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { getMyProfile, updateMyLanguage } from "@/lib/profile.functions";
 
 export type Lang = "pt" | "en";
 
@@ -418,6 +420,8 @@ const dict = {
     error_friendly_desc: "Tente novamente em alguns segundos. Se persistir, volte ao início.",
     error_retry: "Tentar de novo",
     error_home: "Ir para o início",
+    rate_limit_title: "Limite de uso atingido",
+    rate_limit_desc: "Você atingiu o limite por hora ou por dia para esta integração. Tente novamente mais tarde ou continue usando o processamento local.",
   },
   en: {
     nav_app: "App",
@@ -834,6 +838,8 @@ const dict = {
     error_friendly_desc: "Please try again in a few seconds. If it keeps failing, head back home.",
     error_retry: "Try again",
     error_home: "Go home",
+    rate_limit_title: "Usage limit reached",
+    rate_limit_desc: "You hit the hourly or daily cap for this integration. Try again later or keep going with local processing.",
   },
 } as const;
 
@@ -856,12 +862,57 @@ function detect(): Lang {
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("pt");
+  const hydratedFromServer = useRef(false);
+
   useEffect(() => {
     setLangState(detect());
   }, []);
+
+  // When a session exists, prefer the server-stored preference and keep it in sync.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFromServer() {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) return;
+        const prefs = await getMyProfile();
+        if (cancelled) return;
+        hydratedFromServer.current = true;
+        if (prefs.preferredLanguage && prefs.preferredLanguage !== lang) {
+          setLangState(prefs.preferredLanguage);
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem("silentcut.lang", prefs.preferredLanguage);
+          }
+        }
+      } catch {
+        // Non-fatal: fall back to local detection.
+      }
+    }
+    loadFromServer();
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN") loadFromServer();
+      if (event === "SIGNED_OUT") hydratedFromServer.current = false;
+    });
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const setLang = (l: Lang) => {
     setLangState(l);
     if (typeof window !== "undefined") window.localStorage.setItem("silentcut.lang", l);
+    // Best-effort persist for signed-in users; ignore errors (offline / not auth'd).
+    void (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) return;
+        await updateMyLanguage({ data: { language: l } });
+      } catch {
+        /* ignore */
+      }
+    })();
   };
   const value = useMemo<Ctx>(() => ({ lang, setLang, t: dict[lang] as Dict }), [lang]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

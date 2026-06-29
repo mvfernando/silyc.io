@@ -67,6 +67,27 @@ export type Database = {
           },
         ]
       }
+      integration_usage: {
+        Row: {
+          called_at: string
+          id: number
+          integration: string
+          user_id: string
+        }
+        Insert: {
+          called_at?: string
+          id?: number
+          integration: string
+          user_id: string
+        }
+        Update: {
+          called_at?: string
+          id?: number
+          integration?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       pipeline_feedback: {
         Row: {
           audio_profile_used: string | null
@@ -119,6 +140,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          preferred_language: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          preferred_language?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          preferred_language?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       project_versions: {
         Row: {

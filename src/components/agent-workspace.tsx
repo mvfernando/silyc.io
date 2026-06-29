@@ -125,6 +125,7 @@ export function AgentWorkspace() {
   const [rating, setRating] = useState<FeedbackRating | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const [interruptedSnapshot, setInterruptedSnapshot] = useState<AgentSnapshot | null>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
 
   // On mount, check if a previous run was interrupted (snapshot stayed at
   // "working"). We can't truly resume — show a banner so the user understands
@@ -272,31 +273,37 @@ export function AgentWorkspace() {
           ended without reaching ready/failed (tab closed, crash, etc.). */}
       {stage === "upload" && interruptedSnapshot && (
         <div className="mx-auto max-w-3xl px-6 pt-6">
-          <div
-            role="status"
-            className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-3"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-foreground">
-                {t.agent_resume_banner_title}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t.agent_resume_banner_desc
-                  .replace("{file}", interruptedSnapshot.fileName)
-                  .replace("{pct}", String(Math.round(interruptedSnapshot.progress * 100)))}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                clearSnapshot();
-                setInterruptedSnapshot(null);
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-            >
-              {t.agent_resume_banner_dismiss}
-            </button>
-          </div>
+          <ResumeBanner
+            t={t}
+            snapshot={interruptedSnapshot}
+            onResume={() => resumeInputRef.current?.click()}
+            onDismiss={() => {
+              clearSnapshot();
+              setInterruptedSnapshot(null);
+            }}
+          />
+          <input
+            ref={resumeInputRef}
+            type="file"
+            accept="video/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              if (
+                interruptedSnapshot &&
+                (f.name !== interruptedSnapshot.fileName ||
+                  f.size !== interruptedSnapshot.fileSize)
+              ) {
+                toast.warning(t.agent_resume_banner_title, {
+                  description: t.agent_resume_banner_desc
+                    .replace("{file}", interruptedSnapshot.fileName)
+                    .replace("{pct}", String(Math.round(interruptedSnapshot.progress * 100))),
+                });
+              }
+              void handleFile(f);
+            }}
+          />
         </div>
       )}
 
@@ -553,10 +560,44 @@ function WorkingStage({
   }, []);
   const elapsedMs = startedAt ? now - startedAt : 0;
   const elapsedLabel = formatElapsed(elapsedMs);
-  const etaLabel =
-    startedAt && pct >= 10 && pct < 100
-      ? formatElapsed(Math.max(0, (elapsedMs / pct) * (100 - pct)))
-      : null;
+
+  // Smoothed ETA — exponential moving average of the progress rate
+  // (percent per second). Reacts faster than a flat elapsed/progress
+  // estimate when phases change pace, and stops jittering at low pct.
+  const rateRef = useRef<{ pct: number; t: number; rate: number } | null>(null);
+  useEffect(() => {
+    if (!startedAt) {
+      rateRef.current = null;
+      return;
+    }
+    const nowTs = Date.now();
+    const prev = rateRef.current;
+    if (!prev) {
+      rateRef.current = { pct, t: nowTs, rate: 0 };
+      return;
+    }
+    const dt = (nowTs - prev.t) / 1000;
+    const dp = pct - prev.pct;
+    if (dt > 0.25 && dp > 0) {
+      const instant = dp / dt;
+      // EWMA with alpha=0.25 — favours stability over reactivity.
+      const smoothed = prev.rate > 0 ? prev.rate * 0.75 + instant * 0.25 : instant;
+      rateRef.current = { pct, t: nowTs, rate: smoothed };
+    } else if (dp !== 0) {
+      rateRef.current = { ...prev, pct };
+    }
+  }, [pct, startedAt]);
+  const smoothedRate = rateRef.current?.rate ?? 0;
+  const etaLabel = (() => {
+    if (!startedAt || pct >= 100) return null;
+    if (pct < 5) return null; // too early to trust
+    if (smoothedRate > 0.05) {
+      return formatElapsed(((100 - pct) / smoothedRate) * 1000);
+    }
+    // Fallback to flat estimate once we have meaningful progress.
+    if (pct >= 10) return formatElapsed((elapsedMs / pct) * (100 - pct));
+    return null;
+  })();
 
   return (
     <motion.div
@@ -625,6 +666,92 @@ function formatElapsed(ms: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return r ? `${m}m ${r}s` : `${m}m`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Recovery banner — shown after an interrupted run                    */
+/* ------------------------------------------------------------------ */
+
+function ResumeBanner({
+  t,
+  snapshot,
+  onResume,
+  onDismiss,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+  snapshot: AgentSnapshot;
+  onResume: () => void;
+  onDismiss: () => void;
+}) {
+  const pct = Math.round(snapshot.progress * 100);
+  const elapsed = formatElapsed(Math.max(0, Date.now() - snapshot.startedAt));
+  const size = formatFileSize(snapshot.fileSize);
+  const phase = snapshot.currentTask ?? "—";
+  return (
+    <div
+      role="status"
+      className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-5 py-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
+            {t.agent_resume_banner_title}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t.agent_resume_banner_desc
+              .replace("{file}", snapshot.fileName)
+              .replace("{pct}", String(pct))}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline shrink-0"
+        >
+          {t.agent_resume_banner_dismiss}
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted-foreground">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.15em] text-muted-foreground/80">
+            {t.agent_resume_banner_saved_title}
+          </p>
+          <ul className="mt-2 space-y-1 list-disc pl-4">
+            <li>
+              {t.agent_resume_banner_saved_item_file
+                .replace("{file}", snapshot.fileName)
+                .replace("{size}", size)}
+            </li>
+            <li>
+              {t.agent_resume_banner_saved_item_progress
+                .replace("{phase}", phase)
+                .replace("{pct}", String(pct))}
+            </li>
+            <li>
+              {t.agent_resume_banner_saved_item_time.replace("{elapsed}", elapsed)}
+            </li>
+          </ul>
+        </div>
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.15em] text-muted-foreground/80">
+            {t.agent_resume_banner_steps_title}
+          </p>
+          <ol className="mt-2 space-y-1 list-decimal pl-4">
+            <li>{t.agent_resume_banner_step_1}</li>
+            <li>{t.agent_resume_banner_step_2}</li>
+            <li>{t.agent_resume_banner_step_3}</li>
+          </ol>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Button size="sm" onClick={onResume}>
+          {t.agent_resume_banner_resume}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */

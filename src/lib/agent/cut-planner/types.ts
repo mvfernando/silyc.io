@@ -78,7 +78,7 @@ export type DecisionLogEntry = {
 
 export type CutPlan = {
   /** Schema + ruleset version stamped into every plan (Sprint A — Contracts). */
-  version: { schema: number; ruleset: string };
+  version: import("./contracts").CutPlanVersion;
   /** Final silence ranges to remove (input for the existing renderer). */
   silences: SilenceRange[];
   /** Total duration of the source timeline. */

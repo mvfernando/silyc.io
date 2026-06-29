@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { formatDuration } from "@/lib/ffmpeg-processor";
 
-export const Route = createFileRoute("/_authenticated/projects")({
+export const Route = createFileRoute("/_authenticated/projects/")({
   head: () => ({ meta: [{ title: "Silyc — Projetos" }] }),
   component: ProjectsPage,
 });

@@ -1,21 +1,33 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Spinner } from "@/components/spinner";
-import { listPlatformUsers, type AdminUserRow } from "@/lib/admin-users.functions";
+import { supabase } from "@/integrations/supabase/client";
+import { listPlatformUsers, setUserAdmin, type AdminUserRow } from "@/lib/admin-users.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({ meta: [{ title: "Silyc — Users" }] }),
   component: AdminUsersPage,
 });
 
+type SortKey = "created_at" | "last_sign_in_at";
+type SortDir = "asc" | "desc";
+const PAGE_SIZE = 25;
+
 function AdminUsersPage() {
   const { data: isAdmin, isLoading: roleLoading } = useIsAdmin();
   const fetchUsers = useServerFn(listPlatformUsers);
+  const mutateAdmin = useServerFn(setUserAdmin);
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("created_at");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [page, setPage] = useState(0);
+  const [confirm, setConfirm] = useState<{ user: AdminUserRow; isAdmin: boolean } | null>(null);
+  const [reason, setReason] = useState("");
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["admin-users"],
@@ -23,17 +35,45 @@ function AdminUsersPage() {
     queryFn: async (): Promise<AdminUserRow[]> => await fetchUsers(),
   });
 
+  const [meId, setMeId] = useState<string | null>(null);
+  useMemo(() => {
+    supabase.auth.getUser().then(({ data }) => setMeId(data.user?.id ?? null));
+  }, []);
+
   const filtered = useMemo(() => {
-    const list = users ?? [];
-    if (!q.trim()) return list;
-    const needle = q.trim().toLowerCase();
-    return list.filter(
-      (u) =>
-        u.email?.toLowerCase().includes(needle) ||
-        u.name?.toLowerCase().includes(needle) ||
-        u.id.toLowerCase().includes(needle),
-    );
-  }, [users, q]);
+    let list = users ?? [];
+    if (q.trim()) {
+      const needle = q.trim().toLowerCase();
+      list = list.filter(
+        (u) =>
+          u.email?.toLowerCase().includes(needle) ||
+          u.name?.toLowerCase().includes(needle) ||
+          u.id.toLowerCase().includes(needle),
+      );
+    }
+    const sorted = [...list].sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      const at = av ? new Date(av).getTime() : 0;
+      const bt = bv ? new Date(bv).getTime() : 0;
+      return sortDir === "desc" ? bt - at : at - bt;
+    });
+    return sorted;
+  }, [users, q, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageRows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ userId, isAdmin: ia, reason: r }: { userId: string; isAdmin: boolean; reason: string }) =>
+      await mutateAdmin({ data: { userId, isAdmin: ia, reason: r } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      setConfirm(null);
+      setReason("");
+    },
+  });
 
   const stats = useMemo(() => {
     const list = users ?? [];
@@ -96,23 +136,39 @@ function AdminUsersPage() {
           <Kpi label="With projects" value={stats.withProjects.toString()} />
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <input
             type="search"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => { setQ(e.target.value); setPage(0); }}
             placeholder="Search by name, email or id…"
-            className="w-full rounded-md border border-border/60 bg-background px-3 py-2 text-sm outline-none focus:border-foreground/40"
+            className="min-w-[240px] flex-1 rounded-md border border-border/60 bg-background px-3 py-2 text-sm outline-none focus:border-foreground/40"
           />
+          <select
+            value={sortKey}
+            onChange={(e) => { setSortKey(e.target.value as SortKey); setPage(0); }}
+            className="rounded-md border border-border/60 bg-background px-3 py-2 text-sm outline-none focus:border-foreground/40"
+          >
+            <option value="created_at">Sort: Joined</option>
+            <option value="last_sign_in_at">Sort: Last sign-in</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+            className="rounded-md border border-border/60 bg-background px-3 py-2 text-sm hover:border-foreground/40"
+          >
+            {sortDir === "desc" ? "Newest first" : "Oldest first"}
+          </button>
         </div>
 
         {isLoading ? (
           <div className="grid place-items-center py-20 text-muted-foreground">
             <Spinner />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : pageRows.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">No users found.</p>
         ) : (
+          <>
           <div className="overflow-hidden rounded-lg border border-border/60 bg-card/40">
             <table className="w-full text-sm">
               <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
@@ -122,11 +178,11 @@ function AdminUsersPage() {
                   <th className="px-4 py-3 text-right font-medium">Projects</th>
                   <th className="px-4 py-3 text-left font-medium">Last sign-in</th>
                   <th className="px-4 py-3 text-left font-medium">Joined</th>
-                  <th className="px-4 py-3 text-right font-medium">Action</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
-                {filtered.map((u) => (
+                {pageRows.map((u) => (
                   <tr key={u.id} className="hover:bg-muted/20">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -144,9 +200,13 @@ function AdminUsersPage() {
                         )}
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="truncate font-medium text-foreground">
+                            <Link
+                              to="/admin/users/$id"
+                              params={{ id: u.id }}
+                              className="truncate font-medium text-foreground hover:underline"
+                            >
                               {u.name || u.email || "Unknown"}
-                            </span>
+                            </Link>
                             {u.is_admin && (
                               <span className="rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                                 admin
@@ -169,21 +229,105 @@ function AdminUsersPage() {
                       {new Date(u.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {u.email ? (
-                        <a
-                          href={`mailto:${u.email}`}
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setConfirm({ user: u, isAdmin: !u.is_admin })}
+                          disabled={meId === u.id && u.is_admin}
+                          title={meId === u.id && u.is_admin ? "You cannot revoke your own admin" : undefined}
+                          className="text-xs text-muted-foreground underline hover:text-foreground disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+                        >
+                          {u.is_admin ? "Revoke admin" : "Make admin"}
+                        </button>
+                        <Link
+                          to="/admin/users/$id"
+                          params={{ id: u.id }}
                           className="text-xs text-muted-foreground underline hover:text-foreground"
                         >
-                          Email
-                        </a>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50">—</span>
-                      )}
+                          View
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+            <div>
+              Showing {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={safePage === 0}
+                className="rounded-md border border-border/60 px-2 py-1 hover:border-foreground/40 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="tabular-nums">Page {safePage + 1} / {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={safePage >= totalPages - 1}
+                className="rounded-md border border-border/60 px-2 py-1 hover:border-foreground/40 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+          </>
+        )}
+
+        {confirm && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-background/80 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-lg border border-border/60 bg-card p-6 shadow-xl">
+              <h2 className="text-lg font-semibold tracking-tight">
+                {confirm.isAdmin ? "Grant admin badge" : "Revoke admin badge"}
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {confirm.isAdmin ? "Promote " : "Remove admin from "}
+                <span className="font-medium text-foreground">
+                  {confirm.user.name || confirm.user.email || confirm.user.id}
+                </span>
+                . This action is recorded in the audit log.
+              </p>
+              <label className="mt-4 block text-xs uppercase tracking-wider text-muted-foreground">
+                Reason (optional)
+              </label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+                maxLength={500}
+                className="mt-1 w-full rounded-md border border-border/60 bg-background p-2 text-sm outline-none focus:border-foreground/40"
+                placeholder="Why are you making this change?"
+              />
+              {toggleMutation.error && (
+                <p className="mt-3 text-xs text-red-500">
+                  {(toggleMutation.error as Error).message}
+                </p>
+              )}
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setConfirm(null); setReason(""); }}
+                  disabled={toggleMutation.isPending}
+                  className="rounded-md border border-border/60 px-3 py-2 text-sm hover:border-foreground/40"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleMutation.mutate({ userId: confirm.user.id, isAdmin: confirm.isAdmin, reason })}
+                  disabled={toggleMutation.isPending}
+                  className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+                >
+                  {toggleMutation.isPending ? "Saving…" : confirm.isAdmin ? "Confirm grant" : "Confirm revoke"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>

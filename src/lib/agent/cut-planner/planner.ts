@@ -106,39 +106,24 @@ export function planCuts(
       const end = gap.end - padding;
       if (end > start) cut = { start, end };
     } else if (decision === "shorten") {
-      const keep = targetShortenSec(gap);
-      const removeAmount = Math.max(0, gap.durationSec - keep);
-      // Centre the kept fragment — remove from both sides equally.
+      const keepSec = targetShortenSec(gap);
+      const removeAmount = Math.max(0, gap.durationSec - keepSec);
       const half = removeAmount / 2;
-      const start = gap.start + half;
-      const end = gap.end - half;
-      if (end > start) cut = { start: start - half, end: start }; // remove left half
-      // Append a second range for the right half (we add it as a separate
-      // candidate to keep the per-candidate model simple).
-      const rightCut: SilenceRange | null = end > start ? { start: end, end: end + half } : null;
+      // Remove from both sides equally so the kept fragment stays centred.
+      const leftCut: SilenceRange = { start: gap.start, end: gap.start + half };
+      const rightCut: SilenceRange = { start: gap.end - half, end: gap.end };
       const left: CutCandidate = {
         kind: "gap",
         gap,
         score,
         decision: "shorten",
         reasonKey: reasonKeyFor(gap, "shorten"),
-        cut,
+        cut: leftCut,
         snappedCut: null,
       };
-      candidates.push(left);
+      const right: CutCandidate = { ...left, cut: rightCut };
+      candidates.push(left, right);
       log.push(logForCandidate(left));
-      if (rightCut) {
-        const right: CutCandidate = {
-          kind: "gap",
-          gap,
-          score,
-          decision: "shorten",
-          reasonKey: reasonKeyFor(gap, "shorten"),
-          cut: rightCut,
-          snappedCut: null,
-        };
-        candidates.push(right);
-      }
       continue;
     }
     const cand: CutCandidate = {

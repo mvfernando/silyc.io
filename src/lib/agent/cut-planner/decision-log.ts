@@ -7,13 +7,22 @@ function fmt(s: number): string {
   return `${m}:${sec}`;
 }
 
+function topFactor(c: CutCandidate): string {
+  if (!c.explanations || c.explanations.length === 0) return "";
+  const top = [...c.explanations].sort(
+    (a, b) => Math.abs(b.contribution) - Math.abs(a.contribution),
+  )[0];
+  return ` · ${top.factor} (${top.contribution >= 0 ? "+" : ""}${top.contribution.toFixed(2)})`;
+}
+
 export function logForCandidate(c: CutCandidate): DecisionLogEntry {
   const range = `${fmt(c.gap.start)}–${fmt(c.gap.end)}`;
+  const why = topFactor(c);
   if (c.decision === "keep") {
     return {
       level: "info",
       tag: "keep",
-      message: `[keep] ${range} (${c.reasonKey})`,
+      message: `[keep] ${range} (${c.reasonKey})${why}`,
     };
   }
   if (c.decision === "shorten") {
@@ -21,7 +30,7 @@ export function logForCandidate(c: CutCandidate): DecisionLogEntry {
     return {
       level: "info",
       tag: "shorten",
-      message: `[shorten] ${range} → kept ${kept.toFixed(2)}s (${c.reasonKey})`,
+      message: `[shorten] ${range} → kept ${kept.toFixed(2)}s (${c.reasonKey})${why}`,
     };
   }
   return {
@@ -29,7 +38,7 @@ export function logForCandidate(c: CutCandidate): DecisionLogEntry {
     tag: c.kind === "filler" ? "filler" : c.kind === "head" ? "head" : c.kind === "tail" ? "tail" : "remove",
     message: `[remove] ${range} (${c.reasonKey}${
       c.kind === "filler" && c.gap.before ? ` "${c.gap.before.text.trim()}"` : ""
-    })`,
+    })${why}`,
   };
 }
 

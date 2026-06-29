@@ -201,17 +201,34 @@ function AdminPage() {
                 {filtered
                   .filter((r) => r.comment && r.comment.trim().length > 0)
                   .slice(0, 12)
-                  .map((r) => (
-                    <li key={r.run_id} className="py-3">
-                      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                        <span>
-                          {r.rating ? REACTION_LABEL[r.rating]?.emoji : "·"} · {r.format ?? "unknown"} · {REFINEMENT_LABEL[r.refinement_choice ?? "none"]}
-                        </span>
-                        <time>{new Date(r.created_at).toLocaleDateString()}</time>
-                      </div>
-                      <p className="mt-1 text-foreground">{r.comment}</p>
-                    </li>
-                  ))}
+                  .map((r) => {
+                    const who = r.user_name || r.user_email || (r.user_id ? `User ${r.user_id.slice(0, 8)}` : "Anonymous");
+                    return (
+                      <li key={r.id} className="py-3">
+                        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                          <span className="truncate">
+                            <span className="font-medium text-foreground">{who}</span>
+                            {r.user_email && r.user_name && (
+                              <span className="ml-1 text-muted-foreground">· {r.user_email}</span>
+                            )}
+                            <span className="ml-2">
+                              {r.rating ? REACTION_LABEL[r.rating]?.emoji : "·"} · {r.format ?? "unknown"} · {REFINEMENT_LABEL[r.refinement_choice ?? "none"]}
+                            </span>
+                          </span>
+                          <time className="shrink-0">{new Date(r.created_at).toLocaleDateString()}</time>
+                        </div>
+                        <p className="mt-1 text-foreground">{r.comment}</p>
+                        {r.user_email && (
+                          <a
+                            href={`mailto:${r.user_email}?subject=${encodeURIComponent("Silyc — about your feedback")}`}
+                            className="mt-1 inline-block text-xs text-muted-foreground underline hover:text-foreground"
+                          >
+                            Reply to {r.user_email}
+                          </a>
+                        )}
+                      </li>
+                    );
+                  })}
                 {filtered.filter((r) => r.comment && r.comment.trim().length > 0).length === 0 && (
                   <li className="py-6 text-center text-muted-foreground">No comments yet</li>
                 )}

@@ -7,14 +7,13 @@ import { Spinner } from "@/components/spinner";
 import { AdminShell } from "@/components/admin-shell";
 import { supabase } from "@/integrations/supabase/client";
 import { listPlatformUsers, setUserAdmin, type AdminUserRow } from "@/lib/admin-users.functions";
+import { sortUsers, paginate, applySortChange, type UserSortKey, type SortDir } from "@/lib/admin-users-sort";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({ meta: [{ title: "Silyc — Users" }] }),
   component: AdminUsersPage,
 });
 
-type SortKey = "created_at" | "last_sign_in_at";
-type SortDir = "asc" | "desc";
 const PAGE_SIZE = 25;
 const REASON_MIN = 10;
 
@@ -24,7 +23,7 @@ function AdminUsersPage() {
   const mutateAdmin = useServerFn(setUserAdmin);
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("created_at");
+  const [sortKey, setSortKey] = useState<UserSortKey>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(0);
   const [confirm, setConfirm] = useState<{ user: AdminUserRow; isAdmin: boolean } | null>(null);
@@ -53,19 +52,10 @@ function AdminUsersPage() {
           u.id.toLowerCase().includes(needle),
       );
     }
-    const sorted = [...list].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      const at = av ? new Date(av).getTime() : 0;
-      const bt = bv ? new Date(bv).getTime() : 0;
-      return sortDir === "desc" ? bt - at : at - bt;
-    });
-    return sorted;
+    return sortUsers(list, sortKey, sortDir);
   }, [users, q, sortKey, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages - 1);
-  const pageRows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const { rows: pageRows, totalPages, safePage } = paginate(filtered, page, PAGE_SIZE);
 
   const toggleMutation = useMutation({
     mutationFn: async ({ userId, isAdmin: ia, reason: r }: { userId: string; isAdmin: boolean; reason: string }) =>
@@ -125,7 +115,14 @@ function AdminUsersPage() {
           />
           <select
             value={sortKey}
-            onChange={(e) => { setSortKey(e.target.value as SortKey); setPage(0); }}
+            onChange={(e) => {
+              const next = applySortChange(
+                { sortKey, sortDir, page },
+                { sortKey: e.target.value as UserSortKey },
+              );
+              setSortKey(next.sortKey);
+              setPage(next.page);
+            }}
             className="rounded-md border border-border/60 bg-background px-3 py-2 text-sm outline-none focus:border-foreground/40"
           >
             <option value="created_at">Sort: Joined</option>
@@ -133,7 +130,14 @@ function AdminUsersPage() {
           </select>
           <button
             type="button"
-            onClick={() => { setSortDir((d) => (d === "desc" ? "asc" : "desc")); setPage(0); }}
+            onClick={() => {
+              const next = applySortChange(
+                { sortKey, sortDir, page },
+                { sortDir: sortDir === "desc" ? "asc" : "desc" },
+              );
+              setSortDir(next.sortDir);
+              setPage(next.page);
+            }}
             className="rounded-md border border-border/60 bg-background px-3 py-2 text-sm hover:border-foreground/40"
           >
             {sortDir === "desc" ? "Newest first" : "Oldest first"}

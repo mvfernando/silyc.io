@@ -200,14 +200,14 @@ Open an issue with reproduction steps, the source video duration/codec when rele
 
 ## Security disclosure
 
-Please **do not** open public issues for vulnerabilities. Email <eu@mvfernando.rf.gd> with details and we'll coordinate a fix and disclosure timeline.
+Please **do not** open public issues for vulnerabilities. Email <email@mvfernando.rf.gd> with details and we'll coordinate a fix and disclosure timeline.
 
 ## Community & contact
 
-- Maintainer: **Mvuemba Fernando** — <eu@mvfernando.rf.gd>
+- Maintainer: **Elio Fernandes** — <email@mvfernando.rf.gd>
 - Twitter / X: [@mvfernando_](https://x.com/mvfernando_)
 - Issues & discussions: GitHub
 
 ## License
 
-[MIT](LICENSE) © Mvuemba Fernando and silyc. contributors.
+[MIT](LICENSE) © mvfernando and silyc. contributors.

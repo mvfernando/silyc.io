@@ -15,6 +15,7 @@
 import type { CutPlan } from "./types";
 import {
   VALIDATION_CONSTANTS,
+  type ValidationCode,
   type ValidationIssue,
   type ValidationReport,
 } from "./contracts";
@@ -141,4 +142,82 @@ export function validatePlan(
 
   const ok = !issues.some((iss) => iss.severity === "error");
   return { ok, issues };
+}
+
+/**
+ * Human-readable, actionable hint for each validation code.
+ * Used by the UI (via `InvalidPlanError`) to tell the user what to tweak
+ * before reprocessing — never expose raw codes alone.
+ */
+export const VALIDATION_HINTS: Record<
+  ValidationCode,
+  { en: string; pt: string }
+> = {
+  segment_overlap: {
+    en: "Two kept segments overlap. Increase the minimum gap between cuts or rerun with a less aggressive preset.",
+    pt: "Dois segmentos mantidos se sobrepõem. Aumente o intervalo mínimo entre cortes ou rode com um preset menos agressivo.",
+  },
+  segment_too_short: {
+    en: "A kept clip is shorter than 250 ms. Increase padding around speech (paddingSec) or lower aggressiveness.",
+    pt: "Um trecho mantido ficou abaixo de 250 ms. Aumente o padding em torno da fala (paddingSec) ou reduza a agressividade.",
+  },
+  cut_out_of_bounds: {
+    en: "A silence falls outside the video timeline. Reprobe the duration or re-upload the source.",
+    pt: "Um silêncio caiu fora da duração do vídeo. Reanalise a duração ou reenvie o arquivo de origem.",
+  },
+  filler_in_protected_window: {
+    en: "A filler word landed inside the protected head/tail window. Disable filler removal or shrink the protected window.",
+    pt: "Uma muleta caiu na janela protegida de início/fim. Desative a remoção de muletas ou reduza a janela protegida.",
+  },
+  negative_duration: {
+    en: "A silence has zero or negative duration. Re-run transcription — the timestamps are corrupted.",
+    pt: "Um silêncio tem duração zero ou negativa. Refaça a transcrição — os timestamps estão corrompidos.",
+  },
+  snap_outside_window: {
+    en: "A snap point moved beyond the ±8 ms window. Disable zero-crossing snap or re-decode the audio.",
+    pt: "Um ponto de snap saiu da janela de ±8 ms. Desative o snap por zero-crossing ou recodifique o áudio.",
+  },
+  missing_explanation: {
+    en: "A decision has no reason key (debug only). Safe to ignore in production.",
+    pt: "Uma decisão ficou sem reason key (debug). Pode ser ignorado em produção.",
+  },
+};
+
+/**
+ * Structured error thrown by `cut.task` when `validatePlan` rejects the plan.
+ * Carries the full `ValidationReport` plus an actionable summary so the UI
+ * (error-mapper, JobLogsPanel) can render concrete next steps without having
+ * to know the validator's internals.
+ */
+export class InvalidPlanError extends Error {
+  readonly code = "INVALID_PLAN" as const;
+  readonly report: ValidationReport;
+  readonly errorCodes: ValidationCode[];
+  readonly hints: string[];
+
+  constructor(report: ValidationReport, lang: "pt" | "en" = "en") {
+    const errors = report.issues.filter((i) => i.severity === "error");
+    const codes = Array.from(new Set(errors.map((i) => i.code)));
+    const hints = codes.map((c) => VALIDATION_HINTS[c]?.[lang] ?? c);
+    super(`INVALID_PLAN: ${codes.join(", ") || "unknown"}`);
+    this.name = "InvalidPlanError";
+    this.report = report;
+    this.errorCodes = codes;
+    this.hints = hints;
+  }
+
+  /** One-paragraph summary suitable for toasts / inline alerts. */
+  toActionableMessage(lang: "pt" | "en" = "en"): string {
+    const errors = this.report.issues.filter((i) => i.severity === "error");
+    if (errors.length === 0) return this.message;
+    const lines = errors.map((iss) => {
+      const hint = VALIDATION_HINTS[iss.code]?.[lang] ?? "";
+      return `• [${iss.code}] ${iss.message}${hint ? ` — ${hint}` : ""}`;
+    });
+    const header =
+      lang === "pt"
+        ? "O plano de cortes foi rejeitado pelo validador. Ajustes sugeridos:"
+        : "The cut plan was rejected by the validator. Suggested fixes:";
+    return `${header}\n${lines.join("\n")}`;
+  }
 }

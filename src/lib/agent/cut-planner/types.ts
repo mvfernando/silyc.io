@@ -50,6 +50,8 @@ export type CutCandidate = {
   decision: CutDecision;
   /** Reason key (i18n-friendly, also used as a log tag). */
   reasonKey: string;
+  /** Auditable factors that built the score (Sprint B). */
+  explanations: import("./contracts").DecisionExplanation[];
   /** Final cut range AFTER score/shorten logic, but BEFORE snap. */
   cut: SilenceRange | null;
   /** Same range AFTER zero-crossing snap; null when snap was not applied. */

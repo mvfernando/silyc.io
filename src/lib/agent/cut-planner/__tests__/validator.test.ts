@@ -89,6 +89,7 @@ describe("validator — structural invariants", () => {
           score: 0.9,
           decision: "remove",
           reasonKey: "dead_air",
+          explanations: [{ factor: "silence_duration", weight: 0.5, contribution: 0.5, detail: "gap 1s" }],
           cut: { start: 1.1, end: 1.9 },
           snappedCut: { start: 1.05, end: 1.9 }, // 50ms off → error
         },
@@ -116,6 +117,7 @@ describe("validator — structural invariants", () => {
           score: 1,
           decision: "remove",
           reasonKey: "filler_tipo",
+          explanations: [{ factor: "filler_word", weight: 1, contribution: 1, detail: "filler tipo" }],
           cut: { start: 0.1, end: 0.3 },
           snappedCut: null,
         },
@@ -143,6 +145,7 @@ describe("validator — structural invariants", () => {
           score: 0.8,
           decision: "remove",
           reasonKey: "",
+          explanations: [],
           cut: { start: 1, end: 2 },
           snappedCut: null,
         },

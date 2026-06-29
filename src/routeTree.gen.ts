@@ -16,6 +16,7 @@ import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects.$id'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminUsageRouteImport } from './routes/_authenticated/admin.usage'
 import { Route as ApiPublicHealthDenoiseRouteImport } from './routes/api/public/health.denoise'
 
@@ -53,6 +54,11 @@ const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedProjectsRoute,
 } as any)
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
 const AuthenticatedAdminUsageRoute = AuthenticatedAdminUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AuthenticatedAppRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/app': typeof AuthenticatedAppRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/_authenticated/app': typeof AuthenticatedAppRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/_authenticated/admin/usage': typeof AuthenticatedAdminUsageRoute
+  '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/api/public/health/denoise': typeof ApiPublicHealthDenoiseRoute
 }
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/projects'
     | '/admin/usage'
+    | '/admin/users'
     | '/projects/$id'
     | '/api/public/health/denoise'
   fileRoutesByTo: FileRoutesByTo
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/projects'
     | '/admin/usage'
+    | '/admin/users'
     | '/projects/$id'
     | '/api/public/health/denoise'
   id:
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app'
     | '/_authenticated/projects'
     | '/_authenticated/admin/usage'
+    | '/_authenticated/admin/users'
     | '/_authenticated/projects/$id'
     | '/api/public/health/denoise'
   fileRoutesById: FileRoutesById
@@ -188,6 +200,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProjectsIdRouteImport
       parentRoute: typeof AuthenticatedProjectsRoute
     }
+    '/_authenticated/admin/users': {
+      id: '/_authenticated/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/usage': {
       id: '/_authenticated/admin/usage'
       path: '/usage'
@@ -207,10 +226,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,
+  AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
 }
 
 const AuthenticatedAdminRouteWithChildren =

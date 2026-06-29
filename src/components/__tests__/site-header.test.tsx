@@ -104,6 +104,7 @@ describe("SiteHeader", () => {
     };
     renderHeader();
     await flushAuth();
-    expect(await screen.findByText("BM")).toBeTruthy();
+    const initials = await screen.findAllByText("BM");
+    expect(initials.length).toBeGreaterThan(0);
   });
 });

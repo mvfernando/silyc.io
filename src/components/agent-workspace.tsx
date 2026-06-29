@@ -861,6 +861,7 @@ function ReadyStage({
   results,
   showRefine,
   rating,
+  savedProjectId,
   onRate,
   onAskRefine,
   onComment,
@@ -880,6 +881,7 @@ function ReadyStage({
   results: TaskResults | null;
   showRefine: boolean;
   rating: FeedbackRating | null;
+  savedProjectId: string | null;
   onRate: (r: FeedbackRating) => void;
   onAskRefine: () => void;
   onComment: (comment: string) => void;
@@ -1000,6 +1002,17 @@ function ReadyStage({
           {t.agent_new_video}
         </Button>
       </div>
+      {savedProjectId && (
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          <Link
+            to="/projects/$id"
+            params={{ id: savedProjectId }}
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            Ver no histórico de projetos
+          </Link>
+        </p>
+      )}
 
       {/* Reaction row — 3 honest options, no thumbs-down */}
       <div className="mt-10 flex flex-col items-center gap-3">

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planCuts } from "../planner";
+import { validatePlan } from "../validator";
 
 describe("planCuts — integration", () => {
   it("trims head and tail, keeps a short dramatic pause, removes dead air", () => {
@@ -46,5 +47,29 @@ describe("planCuts — integration", () => {
     expect(plan.silences).toEqual([]);
     expect(plan.candidates).toEqual([]);
     expect(plan.removedSec).toBe(0);
+  });
+
+  it("absorbs tiny kept islands instead of producing segment_too_short", () => {
+    const plan = planCuts(
+      [
+        { start: 1.0, end: 1.1, text: "A" },
+        { start: 1.18, end: 1.28, text: "tipo" },
+        { start: 4.5, end: 4.7, text: "B" },
+      ],
+      {
+        durationSec: 6,
+        language: "pt",
+        removeFillers: true,
+        paddingSec: 0.08,
+        headPaddingSec: 0.2,
+        tailPaddingSec: 0.3,
+      },
+    );
+
+    const report = validatePlan(plan, { durationSec: 6 });
+
+    expect(report.ok).toBe(true);
+    expect(report.issues.some((i) => i.code === "segment_too_short")).toBe(false);
+    expect(plan.segments.every((s) => s.keepEnd - s.keepStart >= 0.25)).toBe(true);
   });
 });

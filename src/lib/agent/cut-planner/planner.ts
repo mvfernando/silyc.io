@@ -25,7 +25,11 @@ import type {
   PlannerOptions,
   Word,
 } from "./types";
-import { hashIntent, type DecisionExplanation } from "./contracts";
+import {
+  hashIntent,
+  VALIDATION_CONSTANTS,
+  type DecisionExplanation,
+} from "./contracts";
 
 const HEAD_TAIL_FILLER_GUARD = 1;
 const MAX_FILLER_DUR = 1.2;
@@ -220,7 +224,11 @@ export function planCuts(
   const raw: SilenceRange[] = candidates
     .map((c) => c.snappedCut ?? c.cut)
     .filter((r): r is SilenceRange => !!r && r.end > r.start);
-  const silences = mergeOverlapping(raw);
+  const silences = absorbTinyKeptSegments(
+    mergeOverlapping(raw),
+    total,
+    VALIDATION_CONSTANTS.minClipMs / 1000,
+  );
   const removedSec = silences.reduce((acc, r) => acc + (r.end - r.start), 0);
 
   // ---- 5) per-segment encoding strategy --------------------------------
@@ -253,4 +261,52 @@ function mergeOverlapping(ranges: SilenceRange[]): SilenceRange[] {
     }
   }
   return out;
+}
+
+/**
+ * The renderer cannot safely emit sub-250ms kept islands: they cause clicks,
+ * dropped frames and are rejected by validatePlan as `segment_too_short`.
+ *
+ * When aggressive cuts/filler removal leave a tiny kept sliver between removed
+ * ranges, absorb that sliver into the removal ranges and merge again. This is
+ * intentionally conservative: removing an inaudibly small island is better
+ * than failing the whole job after planning.
+ */
+function absorbTinyKeptSegments(
+  silences: SilenceRange[],
+  durationSec: number,
+  minClipSec: number,
+): SilenceRange[] {
+  if (silences.length === 0 || durationSec <= minClipSec) return silences;
+
+  let normalized = mergeOverlapping(silences);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const keep = keptSegmentsFromSilences(normalized, durationSec);
+    const tiny = keep.find((seg) => seg.end - seg.start < minClipSec - 1e-6);
+    if (!tiny) break;
+
+    normalized = mergeOverlapping([...normalized, tiny]);
+    changed = true;
+  }
+
+  return normalized;
+}
+
+function keptSegmentsFromSilences(
+  silences: SilenceRange[],
+  durationSec: number,
+): SilenceRange[] {
+  const keep: SilenceRange[] = [];
+  let cursor = 0;
+  for (const s of mergeOverlapping(silences)) {
+    const start = Math.max(0, Math.min(durationSec, s.start));
+    const end = Math.max(0, Math.min(durationSec, s.end));
+    if (start > cursor) keep.push({ start: cursor, end: start });
+    cursor = Math.max(cursor, end);
+  }
+  if (cursor < durationSec) keep.push({ start: cursor, end: durationSec });
+  return keep;
 }

@@ -49,7 +49,7 @@ function AdminUsagePage() {
     const rows = query.data?.rows ?? [];
     const header = ["user_id", "integration", "created_at"].join(",");
     const body = rows
-      .map((r) => `${r.user_id},${r.integration},${r.created_at}`)
+      .map((r) => `${r.user_id},${r.integration},${r.called_at}`)
       .join("\n");
     const blob = new Blob([`${header}\n${body}\n`], { type: "text/csv" });
     const url = URL.createObjectURL(blob);

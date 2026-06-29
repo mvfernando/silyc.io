@@ -4,7 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export type UsageRow = {
   user_id: string;
   integration: string;
-  created_at: string;
+  called_at: string;
 };
 
 export type UsageSummary = {
@@ -81,10 +81,10 @@ export const listIntegrationUsage = createServerFn({ method: "GET" })
       };
     })
       .from("integration_usage")
-      .select("user_id, integration, created_at")
-      .gte("created_at", data.from)
-      .lte("created_at", data.to)
-      .order("created_at", { ascending: false });
+      .select("user_id, integration, called_at")
+      .gte("called_at", data.from)
+      .lte("called_at", data.to)
+      .order("called_at", { ascending: false });
     const exec = data.integration ? q.eq("integration", data.integration).limit(5000) : q.limit(5000);
     const { data: rowsRaw, error } = await exec;
     if (error) throw new Error(error.message);
@@ -95,13 +95,13 @@ export const listIntegrationUsage = createServerFn({ method: "GET" })
       const cur = map.get(key);
       if (cur) {
         cur.total += 1;
-        if (r.created_at > cur.last_used_at) cur.last_used_at = r.created_at;
+        if (r.called_at > cur.last_used_at) cur.last_used_at = r.called_at;
       } else {
         map.set(key, {
           user_id: r.user_id,
           integration: r.integration,
           total: 1,
-          last_used_at: r.created_at,
+          last_used_at: r.called_at,
         });
       }
     }

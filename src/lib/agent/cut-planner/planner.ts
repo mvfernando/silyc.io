@@ -29,6 +29,8 @@ import type {
 const HEAD_TAIL_FILLER_GUARD = 1;
 const MAX_FILLER_DUR = 1.2;
 
+const PLAN_VERSION = { schema: 1, ruleset: "v1.0.0" } as const;
+
 export function planCuts(
   chunks: WhisperChunk[],
   opts: PlannerOptions,
@@ -48,6 +50,7 @@ export function planCuts(
 
   if (words.length === 0) {
     return {
+      version: { ...PLAN_VERSION },
       silences: [],
       durationSec: total,
       removedSec: 0,
@@ -202,6 +205,7 @@ export function planCuts(
   for (const seg of segments) log.push(logForSegment(seg));
 
   return {
+    version: { ...PLAN_VERSION },
     silences,
     durationSec: total,
     removedSec,

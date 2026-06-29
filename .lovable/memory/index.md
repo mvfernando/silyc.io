@@ -11,3 +11,5 @@ Processamento atual roda no browser (FFmpeg.wasm); sair da aba cancela o job —
 - [Routes restructure backlog](mem://roadmap/routes-restructure.md) — Plano Opção B para mover `/app` → `/projects/new`. Pendente.
 - [Background jobs](mem://roadmap/background-jobs.md) — Mover pipeline para server-side persistido para permitir sair/voltar. Pendente, casar com a reestruturação de rotas.
 - [AI cuts autonomous](mem://roadmap/ai-cuts-autonomous.md) — Waveform + snap a frames + decisão re-encode/copy por segmento para cortes sub-frame, sem toggle na UI.
+- [Editing Engine v1 — contracts & sprints](mem://roadmap/editing-engine-contracts.md) — Contratos canônicos (MediaFacts, EditingIntent, Decision.explanations[], CutPlan versionado, RenderPlan, ValidationReport) + sprints A→F.
+- [Editing Engine v1 — roadmap](mem://roadmap/editing-engine-v1.md) — Gaps vs spec e sequência sugerida; ~55% implementado.

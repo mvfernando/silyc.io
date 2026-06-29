@@ -2,9 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
-import { SiteHeader } from "@/components/site-header";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Spinner } from "@/components/spinner";
+import { AdminShell } from "@/components/admin-shell";
 import { supabase } from "@/integrations/supabase/client";
 import { listPlatformUsers, setUserAdmin, type AdminUserRow } from "@/lib/admin-users.functions";
 
@@ -16,6 +16,7 @@ export const Route = createFileRoute("/_authenticated/admin/users")({
 type SortKey = "created_at" | "last_sign_in_at";
 type SortDir = "asc" | "desc";
 const PAGE_SIZE = 25;
+const REASON_MIN = 10;
 
 function AdminUsersPage() {
   const { data: isAdmin, isLoading: roleLoading } = useIsAdmin();
@@ -28,6 +29,7 @@ function AdminUsersPage() {
   const [page, setPage] = useState(0);
   const [confirm, setConfirm] = useState<{ user: AdminUserRow; isAdmin: boolean } | null>(null);
   const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState<string | null>(null);
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["admin-users"],
@@ -88,47 +90,24 @@ function AdminUsersPage() {
 
   if (roleLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <SiteHeader />
-        <div className="mx-auto max-w-6xl px-4 py-16 text-center text-muted-foreground">
-          <Spinner className="mx-auto" />
-        </div>
-      </div>
+      <AdminShell title="Users">
+        <div className="grid place-items-center py-20"><Spinner /></div>
+      </AdminShell>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-background">
-        <SiteHeader />
-        <div className="mx-auto max-w-6xl px-4 py-16">
-          <h1 className="text-2xl font-semibold">Restricted</h1>
-          <p className="mt-2 text-muted-foreground">
-            This area is for administrators. <Link to="/app" className="underline">Back to app</Link>.
-          </p>
-        </div>
-      </div>
+      <AdminShell title="Restricted">
+        <p className="text-sm text-muted-foreground">
+          This area is for administrators. <Link to="/app" className="underline">Back to app</Link>.
+        </p>
+      </AdminShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <SiteHeader />
-      <main className="mx-auto max-w-6xl px-4 py-10">
-        <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-            <p className="text-sm text-muted-foreground">
-              All accounts registered on the platform.
-            </p>
-          </div>
-          <nav className="flex items-center gap-3 text-xs text-muted-foreground">
-            <Link to="/admin" className="hover:text-foreground">Feedback</Link>
-            <span className="text-foreground">Users</span>
-            <Link to="/admin/usage" className="hover:text-foreground">Usage</Link>
-          </nav>
-        </header>
-
+    <AdminShell title="Users" description="All accounts registered on the platform.">
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Kpi label="Total users" value={stats.total.toString()} />
           <Kpi label="Admins" value={stats.admins.toString()} />
@@ -154,7 +133,7 @@ function AdminUsersPage() {
           </select>
           <button
             type="button"
-            onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+            onClick={() => { setSortDir((d) => (d === "desc" ? "asc" : "desc")); setPage(0); }}
             className="rounded-md border border-border/60 bg-background px-3 py-2 text-sm hover:border-foreground/40"
           >
             {sortDir === "desc" ? "Newest first" : "Oldest first"}
@@ -232,7 +211,7 @@ function AdminUsersPage() {
                       <div className="flex items-center justify-end gap-3">
                         <button
                           type="button"
-                          onClick={() => setConfirm({ user: u, isAdmin: !u.is_admin })}
+                          onClick={() => { setConfirm({ user: u, isAdmin: !u.is_admin }); setReason(""); setReasonError(null); }}
                           disabled={meId === u.id && u.is_admin}
                           title={meId === u.id && u.is_admin ? "You cannot revoke your own admin" : undefined}
                           className="text-xs text-muted-foreground underline hover:text-foreground disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
@@ -293,17 +272,22 @@ function AdminUsersPage() {
                 </span>
                 . This action is recorded in the audit log.
               </p>
-              <label className="mt-4 block text-xs uppercase tracking-wider text-muted-foreground">
-                Reason (optional)
+              <label className="mt-4 flex items-center justify-between text-xs uppercase tracking-wider text-muted-foreground">
+                <span>Reason <span className="text-red-500 normal-case">*</span></span>
+                <span className="tabular-nums">{reason.trim().length}/500</span>
               </label>
               <textarea
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => { setReason(e.target.value); if (reasonError) setReasonError(null); }}
                 rows={3}
                 maxLength={500}
-                className="mt-1 w-full rounded-md border border-border/60 bg-background p-2 text-sm outline-none focus:border-foreground/40"
-                placeholder="Why are you making this change?"
+                aria-invalid={!!reasonError}
+                className={`mt-1 w-full rounded-md border bg-background p-2 text-sm outline-none focus:border-foreground/40 ${reasonError ? "border-red-500/70" : "border-border/60"}`}
+                placeholder={`Required — explain why (min ${REASON_MIN} chars).`}
               />
+              {reasonError && (
+                <p className="mt-2 text-xs text-red-500">{reasonError}</p>
+              )}
               {toggleMutation.error && (
                 <p className="mt-3 text-xs text-red-500">
                   {(toggleMutation.error as Error).message}
@@ -312,7 +296,7 @@ function AdminUsersPage() {
               <div className="mt-5 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => { setConfirm(null); setReason(""); }}
+                  onClick={() => { setConfirm(null); setReason(""); setReasonError(null); }}
                   disabled={toggleMutation.isPending}
                   className="rounded-md border border-border/60 px-3 py-2 text-sm hover:border-foreground/40"
                 >
@@ -320,7 +304,14 @@ function AdminUsersPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => toggleMutation.mutate({ userId: confirm.user.id, isAdmin: confirm.isAdmin, reason })}
+                  onClick={() => {
+                    const trimmed = reason.trim();
+                    if (trimmed.length < REASON_MIN) {
+                      setReasonError(`Please provide a reason with at least ${REASON_MIN} characters.`);
+                      return;
+                    }
+                    toggleMutation.mutate({ userId: confirm.user.id, isAdmin: confirm.isAdmin, reason: trimmed });
+                  }}
                   disabled={toggleMutation.isPending}
                   className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
                 >
@@ -330,8 +321,7 @@ function AdminUsersPage() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+    </AdminShell>
   );
 }
 

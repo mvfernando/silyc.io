@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { SiteHeader } from "@/components/site-header";
 
 export const Route = createFileRoute("/auth")({
+  ssr: false,
   validateSearch: (s: Record<string, unknown>) => ({
     reason: typeof s.reason === "string" ? s.reason : undefined,
   }),

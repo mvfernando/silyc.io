@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "smoke:landing": "node scripts/smoke-landing.mjs",
+    "smoke:landing:full": "node scripts/smoke-landing.mjs --full"
   },
   "dependencies": {
     "@ffmpeg/core": "0.12.10",

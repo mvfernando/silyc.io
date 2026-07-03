@@ -46,6 +46,7 @@ export async function runCutTask(
         removeFillers: ctx.params.removeFillers,
         audioSamples: audio?.samples,
         audioSampleRate: audio?.sampleRate,
+        intent: ctx.params.intent,
       });
       for (const entry of plan.log) ctx.onLog(entry.message);
 

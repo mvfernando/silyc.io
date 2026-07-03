@@ -13,6 +13,7 @@
 import { defaultExportOptions, type ExportOptions } from "@/lib/ffmpeg-processor";
 import { LOCAL_RENDER_MAX_BYTES } from "@/lib/upload-limits";
 import { intentFromRefinement } from "./cut-planner/intent-presets";
+import type { EditingStyle } from "./cut-planner/contracts";
 import type {
   AnalysisFacts,
   RefinementChoice,
@@ -58,6 +59,7 @@ function pickExportOptions(facts: AnalysisFacts): ExportOptions {
 export function decide(
   facts: AnalysisFacts,
   refinement: RefinementChoice = "none",
+  intentStyle?: EditingStyle,
 ): TaskPlan {
   const reasoning: string[] = [];
 
@@ -73,11 +75,16 @@ export function decide(
   const cut: TaskParams["cut"] = {
     ...BASE_CUT,
     ...REFINEMENTS[refinement],
-    // Sprint D — translate the legacy refinement to the modern EditingIntent
-    // so the planner scores + explains its decisions through the preset.
-    intent: intentFromRefinement(refinement),
+    // Sprint D — resolve intent. An explicit style chosen up-front wins over
+    // the legacy refinement mapping so the planner scores + explains its
+    // decisions through the preset the user actually picked.
+    intent: intentStyle
+      ? { style: intentStyle }
+      : intentFromRefinement(refinement),
   };
-  if (refinement !== "none")
+  if (intentStyle)
+    reasoning.push(`cut tuned for intent style=${intentStyle}`);
+  else if (refinement !== "none")
     reasoning.push(
       `cut tuned for refinement=${refinement} (intent style=${cut.intent?.style ?? "natural"})`,
     );

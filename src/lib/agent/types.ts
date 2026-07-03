@@ -58,6 +58,8 @@ export type TaskParams = {
     /** Heuristic FFmpeg fallback parameters when transcription is unavailable. */
     thresholdDb: number;
     minPauseSec: number;
+    /** Editing intent (Sprint D — style preset + optional overrides). */
+    intent?: import("./cut-planner/contracts").EditingIntent;
   };
   audio: {
     skip: boolean;

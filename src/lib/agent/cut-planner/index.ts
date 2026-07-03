@@ -1,6 +1,14 @@
 export { planCuts } from "./planner";
 export { snapToZeroCrossing } from "./snap";
 export { planSegments } from "./encoding-strategy";
+export { toRenderPlan, keepsFromRenderPlan } from "./render-plan";
+export {
+  resolveIntent,
+  refinementToStyle,
+  intentFromRefinement,
+  INTENT_PRESETS,
+  type ResolvedIntent,
+} from "./intent-presets";
 export {
   scoreGap,
   scoreGapWithExplanations,

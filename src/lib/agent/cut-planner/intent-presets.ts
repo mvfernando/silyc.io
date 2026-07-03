@@ -92,7 +92,7 @@ export function resolveIntent(
   // preset-specific values (e.g. dynamic's removeFillers=true).
   const style: EditingStyle = intent?.style ?? "natural";
   const base = PRESETS[style] ?? PRESETS.natural;
-  const src = intent ?? {};
+  const src: Partial<EditingIntent> = intent ?? {};
   return {
     ...base,
     aggressiveness: src.aggressiveness ?? base.aggressiveness,

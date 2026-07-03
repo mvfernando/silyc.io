@@ -182,6 +182,12 @@ export type AgentInput = {
   facts: AnalysisFacts;
   /** Drives the DecisionEngine when this is a re-run. */
   refinement?: RefinementChoice;
+  /**
+   * Sprint D — editing style chosen by the user *before* the run. When
+   * set it overrides the intent the DecisionEngine would derive from the
+   * refinement, so the planner scores this pipeline through the preset.
+   */
+  intent?: import("./cut-planner/contracts").EditingStyle;
   /** Optional Supabase user id; needed for cache + storage paths. */
   userId: string | null;
 };

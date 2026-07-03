@@ -12,6 +12,7 @@
 
 import { defaultExportOptions, type ExportOptions } from "@/lib/ffmpeg-processor";
 import { LOCAL_RENDER_MAX_BYTES } from "@/lib/upload-limits";
+import { intentFromRefinement } from "./cut-planner/intent-presets";
 import type {
   AnalysisFacts,
   RefinementChoice,
@@ -69,8 +70,17 @@ export function decide(
   if (transcribe.skip) reasoning.push("transcribe skipped: no audio track");
 
   // ---- cut ----------------------------------------------------------------
-  const cut: TaskParams["cut"] = { ...BASE_CUT, ...REFINEMENTS[refinement] };
-  if (refinement !== "none") reasoning.push(`cut tuned for refinement=${refinement}`);
+  const cut: TaskParams["cut"] = {
+    ...BASE_CUT,
+    ...REFINEMENTS[refinement],
+    // Sprint D — translate the legacy refinement to the modern EditingIntent
+    // so the planner scores + explains its decisions through the preset.
+    intent: intentFromRefinement(refinement),
+  };
+  if (refinement !== "none")
+    reasoning.push(
+      `cut tuned for refinement=${refinement} (intent style=${cut.intent?.style ?? "natural"})`,
+    );
 
   // ---- audio enhancement --------------------------------------------------
   // The AudioTask runs AFTER render and masters the final video's audio.

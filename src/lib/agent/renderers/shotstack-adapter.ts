@@ -12,7 +12,6 @@
  * `forceKeyFrames`; the per-segment `encoding` stays as metadata for logs
  * only. We DO honour `outputFormat` and `resolution`/`fps` when provided.
  */
-+
 import { keepsFromRenderPlan } from "../cut-planner/render-plan";
 import type { RenderPlan } from "../cut-planner/contracts";
 

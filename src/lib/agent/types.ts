@@ -143,6 +143,20 @@ export type ValueReceipt = {
   analysis: ReceiptAnalysisChip[];
   /** Short "did X because of Y" sentences the UI renders under the chips. */
   decisions: Array<{ reasonKey: string; effectKey: string }>;
+  /**
+   * Sprint B — top 3 auditable reasons behind removed material, aggregated
+   * from the planner's `DecisionExplanation[]`. Powers the "Por quê"
+   * section on the Ready screen so the user can see *why* the agent cut.
+   */
+  topExplanations: Array<{
+    factor: import("./cut-planner/contracts").DecisionFactor;
+    /** Sum of `contribution` across every "remove" decision citing it. */
+    contribution: number;
+    /** Number of decisions that cited this factor. */
+    count: number;
+    /** One representative `detail` string for UI context. */
+    sampleDetail: string;
+  }>;
 };
 
 /** A single confident fact about the source — only emitted when reliable. */
@@ -182,6 +196,12 @@ export type AgentInput = {
   facts: AnalysisFacts;
   /** Drives the DecisionEngine when this is a re-run. */
   refinement?: RefinementChoice;
+  /**
+   * Sprint D — editing style chosen by the user *before* the run. When
+   * set it overrides the intent the DecisionEngine would derive from the
+   * refinement, so the planner scores this pipeline through the preset.
+   */
+  intent?: import("./cut-planner/contracts").EditingStyle;
   /** Optional Supabase user id; needed for cache + storage paths. */
   userId: string | null;
 };

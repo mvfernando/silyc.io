@@ -62,6 +62,7 @@ import {
   type TaskResults,
   type ValueReceipt,
 } from "@/lib/agent";
+import type { EditingStyle } from "@/lib/agent/cut-planner/contracts";
 import {
   saveFeedback,
   listRecentFeedback,
@@ -108,6 +109,8 @@ export function AgentWorkspace() {
 
   const [stage, setStage] = useState<Stage>("upload");
   const [file, setFile] = useState<File | null>(null);
+  // Sprint D — style chosen up-front. Drives the planner's intent preset.
+  const [style, setStyle] = useState<EditingStyle>("natural");
   const [plan, setPlan] = useState<TaskPlan | null>(null);
   const [perTask, setPerTask] = useState<PerTask>({});
   const [done, setDone] = useState<Set<TaskId>>(new Set());
@@ -179,7 +182,11 @@ export function AgentWorkspace() {
   });
 
   const startAgent = useCallback(
-    async (sourceFile: File, refinement: RefinementChoice = "none") => {
+    async (
+      sourceFile: File,
+      refinement: RefinementChoice = "none",
+      chosenStyle: EditingStyle = "natural",
+    ) => {
       setStage("working");
       setError(null);
       setPerTask({});
@@ -213,7 +220,7 @@ export function AgentWorkspace() {
               user_id: userId,
               name: sourceFile.name.replace(/\.[^.]+$/, "") || "Untitled",
               status: "processing",
-              settings: { source: "agent", refinement },
+              settings: { source: "agent", refinement, style: chosenStyle },
             })
             .select("id")
             .single();
@@ -247,7 +254,7 @@ export function AgentWorkspace() {
       };
 
       const ctrl = runAgent(
-        { file: sourceFile, facts, refinement, userId },
+        { file: sourceFile, facts, refinement, intent: chosenStyle, userId },
         {
           onEvent: (e: AgentEvent) => {
             if (e.type === "plan") setPlan(e.plan);
@@ -345,9 +352,9 @@ export function AgentWorkspace() {
         return;
       }
       setFile(f);
-      await startAgent(f, "none");
+      await startAgent(f, "none", style);
     },
-    [startAgent, t.agent_file_too_large],
+    [startAgent, style, t.agent_file_too_large],
   );
 
   const globalProgress = useMemo(() => {
@@ -428,6 +435,8 @@ export function AgentWorkspace() {
           <UploadStage
             key="upload"
             t={t}
+            style={style}
+            onStyleChange={setStyle}
             onFile={handleFile}
             onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
           />
@@ -538,15 +547,29 @@ export function AgentWorkspace() {
 
 function UploadStage({
   t,
+  style,
+  onStyleChange,
   onFile,
   onLegacy,
 }: {
   t: ReturnType<typeof useI18n>["t"];
+  style: EditingStyle;
+  onStyleChange: (s: EditingStyle) => void;
   onFile: (f: File) => void;
   onLegacy: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
+
+  const styleOptions: Array<{
+    id: EditingStyle;
+    label: string;
+    hint: string;
+  }> = [
+    { id: "natural", label: t.agent_style_natural, hint: t.agent_style_natural_hint },
+    { id: "dynamic", label: t.agent_style_dynamic, hint: t.agent_style_dynamic_hint },
+    { id: "cinematic", label: t.agent_style_cinematic, hint: t.agent_style_cinematic_hint },
+  ];
 
   return (
     <motion.div
@@ -563,6 +586,37 @@ function UploadStage({
         <p className="mt-4 text-muted-foreground text-base">
           {t.agent_upload_subtitle}
         </p>
+      </div>
+
+      <div className="mb-8">
+        <p className="text-xs uppercase tracking-wider text-muted-foreground/70 text-center mb-3">
+          {t.agent_style_title}
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {styleOptions.map((opt) => {
+            const selected = style === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => onStyleChange(opt.id)}
+                aria-pressed={selected}
+                className={`text-left rounded-xl border p-4 transition-colors ${
+                  selected
+                    ? "border-primary bg-primary/5"
+                    : "border-border/60 bg-muted/10 hover:bg-muted/30"
+                }`}
+              >
+                <div className="text-sm font-medium text-foreground">
+                  {opt.label}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {opt.hint}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div
@@ -968,6 +1022,32 @@ function ReadyStage({
               return (
                 <li key={i} className="text-center text-sm text-muted-foreground">
                   {effect} {t.agent_decision_because} {reason}.
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Sprint B — "Por quê" top-3 planner factors driving the cuts */}
+      {receipt.topExplanations.length > 0 && (
+        <div className="mt-6 mx-auto max-w-xl">
+          <p className="text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+            {t.agent_why_title}
+          </p>
+          <ul className="mt-3 space-y-1.5">
+            {receipt.topExplanations.map((e, i) => {
+              const tr = t as unknown as Record<string, string>;
+              const label = tr[`agent_why_${e.factor}`] ?? e.factor;
+              return (
+                <li
+                  key={`${e.factor}-${i}`}
+                  className="text-center text-sm text-muted-foreground"
+                >
+                  <span className="text-foreground/90">{label}</span>
+                  <span className="text-muted-foreground/70">
+                    {" "}· {e.count}× · {e.sampleDetail}
+                  </span>
                 </li>
               );
             })}

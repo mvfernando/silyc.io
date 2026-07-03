@@ -19,6 +19,7 @@ import type {
   TaskResults,
   ValueReceipt,
 } from "./types";
+import type { DecisionFactor } from "./cut-planner/contracts";
 
 /** Map a BCP-47ish code to a display name we trust. */
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -69,6 +70,49 @@ function silenceChip(results: TaskResults, facts: AnalysisFacts): ReceiptAnalysi
   return null;
 }
 
+/**
+ * Sprint B — aggregate the planner's `DecisionExplanation[]` across every
+ * "remove"/"shorten" candidate into a top-N list of factors. The receipt
+ * exposes the top 3 so the UI can render a short "Por quê" section.
+ */
+function topExplanations(
+  results: TaskResults,
+  n: number = 3,
+): ValueReceipt["topExplanations"] {
+  const plan = results.cut?.plan;
+  if (!plan?.candidates?.length) return [];
+  const bucket = new Map<
+    DecisionFactor,
+    { contribution: number; count: number; sampleDetail: string }
+  >();
+  for (const cand of plan.candidates) {
+    if (cand.decision === "keep") continue;
+    for (const exp of cand.explanations) {
+      // A negative contribution nudged the candidate toward "keep"; the
+      // "Por quê" section explains what drove the cut, so we sum only
+      // positive contributions.
+      if (exp.contribution <= 0) continue;
+      const cur = bucket.get(exp.factor) ?? {
+        contribution: 0,
+        count: 0,
+        sampleDetail: exp.detail,
+      };
+      cur.contribution += exp.contribution;
+      cur.count += 1;
+      // Keep the detail from the strongest single contribution — most
+      // representative for the UI blurb.
+      if (exp.contribution >= cur.contribution / Math.max(1, cur.count)) {
+        cur.sampleDetail = exp.detail;
+      }
+      bucket.set(exp.factor, cur);
+    }
+  }
+  return Array.from(bucket.entries())
+    .map(([factor, v]) => ({ factor, ...v }))
+    .sort((a, b) => b.contribution - a.contribution)
+    .slice(0, n);
+}
+
 export function buildReceipt(
   facts: AnalysisFacts,
   results: TaskResults,
@@ -106,5 +150,6 @@ export function buildReceipt(
     manualEditingMinutesSaved,
     analysis,
     decisions: insights?.decisions ?? [],
+    topExplanations: topExplanations(results),
   };
 }

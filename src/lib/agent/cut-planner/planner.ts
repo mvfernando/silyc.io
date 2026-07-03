@@ -30,6 +30,7 @@ import {
   VALIDATION_CONSTANTS,
   type DecisionExplanation,
 } from "./contracts";
+import { resolveIntent } from "./intent-presets";
 
 const HEAD_TAIL_FILLER_GUARD = 1;
 const MAX_FILLER_DUR = 1.2;
@@ -42,9 +43,14 @@ export function planCuts(
   opts: PlannerOptions,
 ): CutPlan {
   const total = opts.durationSec;
-  const padding = opts.paddingSec ?? 0.08;
-  const headPad = opts.headPaddingSec ?? 0.2;
-  const tailPad = opts.tailPaddingSec ?? 0.3;
+  const preset = resolveIntent(opts.intent);
+  // Explicit caller options win over the preset — preserves backwards
+  // compatibility with `cut.task.ts` callers that still pass raw padding.
+  const padding = opts.paddingSec ?? preset.paddingSec;
+  const headPad = opts.headPaddingSec ?? preset.protectedHeadSec;
+  const tailPad = opts.tailPaddingSec ?? preset.protectedTailSec;
+  const removeFillers =
+    opts.removeFillers !== undefined ? opts.removeFillers : preset.removeFillers;
   const version = {
     schema: PLAN_SCHEMA,
     ruleset: RULESET_ID,
@@ -118,7 +124,19 @@ export function planCuts(
       continue;
     }
 
-    const { score, explanations } = scoreGapWithExplanations(gap);
+    const raw = scoreGapWithExplanations(gap);
+    const scaled = raw.score * preset.scoreScale;
+    const score = Math.max(0, Math.min(1, scaled));
+    const explanations: DecisionExplanation[] = [...raw.explanations];
+    if (Math.abs(preset.scoreScale - 1) > 1e-6 && raw.explanations.length > 0) {
+      const delta = score - raw.score;
+      explanations.push({
+        factor: "intent_preset",
+        weight: preset.scoreScale,
+        contribution: delta,
+        detail: preset.explanationDetail,
+      });
+    }
     const decision = classifyDecision(score, gap);
     let cut: SilenceRange | null = null;
     if (decision === "remove") {
@@ -164,7 +182,7 @@ export function planCuts(
 
   // ---- 2) filler removal -----------------------------------------------
   let fillersRemoved = 0;
-  if (opts.removeFillers) {
+  if (removeFillers) {
     for (let i = HEAD_TAIL_FILLER_GUARD; i < words.length - HEAD_TAIL_FILLER_GUARD; i++) {
       const w = words[i];
       const dur = w.end - w.start;

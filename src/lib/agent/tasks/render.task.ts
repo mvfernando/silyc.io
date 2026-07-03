@@ -9,36 +9,38 @@
  * sees the exact same edit regardless of backend.
  */
 
-import {
-  processVideoRemoveSilence,
-  type SilenceRange,
-} from "@/lib/ffmpeg-processor";
+import { processVideoRemoveSilence } from "@/lib/ffmpeg-processor";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { isTransientCloudError, withBackoff } from "@/lib/validate-upload";
 import type { AgentInput, TaskParams, TaskResults } from "../types";
+import { toRenderPlan } from "@/lib/agent/cut-planner/render-plan";
+import { toShotstackPayload } from "@/lib/agent/renderers/shotstack-adapter";
+import { toFfmpegInvocation } from "@/lib/agent/renderers/ffmpeg-adapter";
+import type { CutPlan } from "@/lib/agent/cut-planner/types";
+import { planSegments } from "@/lib/agent/cut-planner/encoding-strategy";
 
 export type RenderCtx = {
   params: TaskParams["render"];
   /** Output of the cut task — required. */
   cut: NonNullable<TaskResults["cut"]>;
+  /** Enhanced audio track from AudioTask, when it already ran (rare — audio runs after render today). */
+  enhancedAudioUrl?: string | null;
   onProgress: (ratio: number) => void;
   onLog: (msg: string) => void;
   isCancelled: () => boolean;
   waitWhilePaused: () => Promise<void>;
 };
 
-/** Convert silence ranges to keep ranges that Shotstack understands. */
-function silencesToKeeps(silences: SilenceRange[], totalDuration: number) {
-  const sorted = [...silences].sort((a, b) => a.start - b.start);
-  const keeps: Array<{ start: number; end: number }> = [];
-  let cursor = 0;
-  for (const s of sorted) {
-    if (s.start > cursor) keeps.push({ start: cursor, end: s.start });
-    cursor = Math.max(cursor, s.end);
-  }
-  if (cursor < totalDuration) keeps.push({ start: cursor, end: totalDuration });
-  return keeps.filter((k) => k.end - k.start > 0.05);
+/**
+ * Build the segments the RenderPlan needs. If the CutTask already produced
+ * a plan (word-aware path), reuse its segments — they carry the exact
+ * per-boundary encoding decision. Otherwise (heuristic FFmpeg fallback),
+ * derive them on the fly with the default GOP assumption.
+ */
+function resolveSegments(cut: NonNullable<TaskResults["cut"]>): CutPlan["segments"] {
+  if (cut.plan?.segments && cut.plan.segments.length > 0) return cut.plan.segments;
+  return planSegments(cut.silences, cut.durationSec);
 }
 
 export async function runRenderTask(
@@ -65,14 +67,25 @@ export async function runRenderTask(
 async function runLocal(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<TaskResults["render"]>> {
   await ctx.waitWhilePaused();
   if (ctx.isCancelled()) throw new Error("cancelled");
-  ctx.onLog("rendering locally with ffmpeg.wasm");
+  const segments = resolveSegments(ctx.cut);
+  const renderPlan = toRenderPlan({ segments }, {
+    target: "ffmpeg-local",
+    enhancedAudioUrl: ctx.enhancedAudioUrl ?? null,
+  });
+  const inv = toFfmpegInvocation(renderPlan, { durationSec: ctx.cut.durationSec });
+  ctx.onLog(
+    `rendering locally with ffmpeg.wasm — ${inv.streamCopyCount} stream-copy / ${inv.reencodeCount} re-encode segments`,
+  );
+  if (inv.forceKeyFramesArg) {
+    ctx.onLog(`force_key_frames candidates: ${inv.forceKeyFramesArg}`);
+  }
   const result = await processVideoRemoveSilence(input.file, {
     thresholdDb: -35,
     minPauseSec: 0.5,
     paddingSec: 0.1,
     exportOptions: ctx.params.exportOptions,
-    cachedSilences: ctx.cut.silences,
-    cachedDuration: ctx.cut.durationSec,
+    cachedSilences: inv.silences,
+    cachedDuration: inv.durationSec,
     onProgress: (e) => {
       if (e.phase === "encode" || e.phase === "audio") {
         ctx.onProgress(Math.min(1, e.progress));
@@ -106,16 +119,19 @@ async function runCloud(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<
   ctx.onProgress(0.1);
 
   // 2. submit + poll Shotstack (backoff on transient errors)
-  const keeps = silencesToKeeps(ctx.cut.silences, ctx.cut.durationSec);
+  const segments = resolveSegments(ctx.cut);
+  const renderPlan = toRenderPlan({ segments }, {
+    target: "shotstack",
+    outputFormat: (ctx.params.exportOptions.container as string) ?? "mp4",
+  });
+  const payload = toShotstackPayload(renderPlan, {
+    sourceUrl: signed.signedUrl,
+    resolution: (ctx.params.exportOptions.resolution as "source") ?? "source",
+    format: (ctx.params.exportOptions.container as "mp4") ?? "mp4",
+  });
+  ctx.onLog(`shotstack payload: ${payload.keeps.length} keep ranges`);
   const job = await withBackoff(
-    () => submitShotstackRender({
-      data: {
-        sourceUrl: signed.signedUrl,
-        keeps,
-        resolution: (ctx.params.exportOptions.resolution as "source") ?? "source",
-        format: (ctx.params.exportOptions.container as "mp4") ?? "mp4",
-      },
-    }),
+    () => submitShotstackRender({ data: payload }),
     { attempts: 3, baseMs: 1500, isRetriable: isTransientCloudError },
   );
   ctx.onLog(`shotstack job ${job.id} on ${job.env}`);

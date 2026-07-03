@@ -1029,6 +1029,32 @@ function ReadyStage({
         </div>
       )}
 
+      {/* Sprint B — "Por quê" top-3 planner factors driving the cuts */}
+      {receipt.topExplanations.length > 0 && (
+        <div className="mt-6 mx-auto max-w-xl">
+          <p className="text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+            {t.agent_why_title}
+          </p>
+          <ul className="mt-3 space-y-1.5">
+            {receipt.topExplanations.map((e, i) => {
+              const tr = t as unknown as Record<string, string>;
+              const label = tr[`agent_why_${e.factor}`] ?? e.factor;
+              return (
+                <li
+                  key={`${e.factor}-${i}`}
+                  className="text-center text-sm text-muted-foreground"
+                >
+                  <span className="text-foreground/90">{label}</span>
+                  <span className="text-muted-foreground/70">
+                    {" "}· {e.count}× · {e.sampleDetail}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {/* Preview */}
       {outputUrl && (
         <div className="mt-10 rounded-2xl border border-border/60 overflow-hidden bg-black">

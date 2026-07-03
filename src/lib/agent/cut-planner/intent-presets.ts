@@ -15,11 +15,7 @@
  */
 
 import type { RefinementChoice } from "../types";
-import {
-  DEFAULT_INTENT,
-  type EditingIntent,
-  type EditingStyle,
-} from "./contracts";
+import { type EditingIntent, type EditingStyle } from "./contracts";
 
 /** Concrete parameters a style expands into. */
 export type ResolvedIntent = {
@@ -91,16 +87,20 @@ const PRESETS: Record<EditingStyle, ResolvedIntent> = {
 export function resolveIntent(
   intent: EditingIntent | undefined | null,
 ): ResolvedIntent {
-  const merged: EditingIntent = { ...DEFAULT_INTENT, ...(intent ?? {}) };
-  const base = PRESETS[merged.style] ?? PRESETS.natural;
+  // The preset IS the default for its style. We overlay only the fields the
+  // caller explicitly set — otherwise DEFAULT_INTENT would silently mask
+  // preset-specific values (e.g. dynamic's removeFillers=true).
+  const style: EditingStyle = intent?.style ?? "natural";
+  const base = PRESETS[style] ?? PRESETS.natural;
+  const src = intent ?? {};
   return {
     ...base,
-    aggressiveness: merged.aggressiveness ?? base.aggressiveness,
-    removeFillers: merged.removeFillers ?? base.removeFillers,
+    aggressiveness: src.aggressiveness ?? base.aggressiveness,
+    removeFillers: src.removeFillers ?? base.removeFillers,
     preserveDramaticPauses:
-      merged.preserveDramaticPauses ?? base.preserveDramaticPauses,
-    protectedHeadSec: merged.protectedHeadSec ?? base.protectedHeadSec,
-    protectedTailSec: merged.protectedTailSec ?? base.protectedTailSec,
+      src.preserveDramaticPauses ?? base.preserveDramaticPauses,
+    protectedHeadSec: src.protectedHeadSec ?? base.protectedHeadSec,
+    protectedTailSec: src.protectedTailSec ?? base.protectedTailSec,
   };
 }
 

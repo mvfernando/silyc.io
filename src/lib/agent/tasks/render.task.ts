@@ -9,10 +9,7 @@
  * sees the exact same edit regardless of backend.
  */
 
-import {
-  processVideoRemoveSilence,
-  type SilenceRange,
-} from "@/lib/ffmpeg-processor";
+import { processVideoRemoveSilence } from "@/lib/ffmpeg-processor";
 import { pollShotstackRender, submitShotstackRender } from "@/lib/shotstack.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { isTransientCloudError, withBackoff } from "@/lib/validate-upload";

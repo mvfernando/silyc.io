@@ -62,6 +62,7 @@ import {
   type TaskResults,
   type ValueReceipt,
 } from "@/lib/agent";
+import type { EditingStyle } from "@/lib/agent/cut-planner/contracts";
 import {
   saveFeedback,
   listRecentFeedback,
@@ -108,6 +109,8 @@ export function AgentWorkspace() {
 
   const [stage, setStage] = useState<Stage>("upload");
   const [file, setFile] = useState<File | null>(null);
+  // Sprint D — style chosen up-front. Drives the planner's intent preset.
+  const [style, setStyle] = useState<EditingStyle>("natural");
   const [plan, setPlan] = useState<TaskPlan | null>(null);
   const [perTask, setPerTask] = useState<PerTask>({});
   const [done, setDone] = useState<Set<TaskId>>(new Set());
@@ -179,7 +182,11 @@ export function AgentWorkspace() {
   });
 
   const startAgent = useCallback(
-    async (sourceFile: File, refinement: RefinementChoice = "none") => {
+    async (
+      sourceFile: File,
+      refinement: RefinementChoice = "none",
+      chosenStyle: EditingStyle = "natural",
+    ) => {
       setStage("working");
       setError(null);
       setPerTask({});
@@ -213,7 +220,7 @@ export function AgentWorkspace() {
               user_id: userId,
               name: sourceFile.name.replace(/\.[^.]+$/, "") || "Untitled",
               status: "processing",
-              settings: { source: "agent", refinement },
+              settings: { source: "agent", refinement, style: chosenStyle },
             })
             .select("id")
             .single();
@@ -247,7 +254,7 @@ export function AgentWorkspace() {
       };
 
       const ctrl = runAgent(
-        { file: sourceFile, facts, refinement, userId },
+        { file: sourceFile, facts, refinement, intent: chosenStyle, userId },
         {
           onEvent: (e: AgentEvent) => {
             if (e.type === "plan") setPlan(e.plan);
@@ -345,9 +352,9 @@ export function AgentWorkspace() {
         return;
       }
       setFile(f);
-      await startAgent(f, "none");
+      await startAgent(f, "none", style);
     },
-    [startAgent, t.agent_file_too_large],
+    [startAgent, style, t.agent_file_too_large],
   );
 
   const globalProgress = useMemo(() => {
@@ -428,6 +435,8 @@ export function AgentWorkspace() {
           <UploadStage
             key="upload"
             t={t}
+            style={style}
+            onStyleChange={setStyle}
             onFile={handleFile}
             onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
           />

@@ -74,6 +74,34 @@ import {
 
 type Stage = "upload" | "working" | "ready" | "failed";
 
+// Sprint D — the user's chosen editing style is persisted so a page reload
+// or a fresh session lands on the same preset instead of silently falling
+// back to "natural".
+const STYLE_STORAGE_KEY = "silyc:agent:style";
+const VALID_STYLES: readonly EditingStyle[] = ["natural", "dynamic", "cinematic"];
+
+function readPersistedStyle(): EditingStyle {
+  if (typeof window === "undefined") return "natural";
+  try {
+    const raw = window.localStorage.getItem(STYLE_STORAGE_KEY);
+    if (raw && (VALID_STYLES as readonly string[]).includes(raw)) {
+      return raw as EditingStyle;
+    }
+  } catch {
+    // localStorage disabled (private mode, SSR) — fall through
+  }
+  return "natural";
+}
+
+function writePersistedStyle(next: EditingStyle) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STYLE_STORAGE_KEY, next);
+  } catch {
+    // ignore
+  }
+}
+
 function detectFormatFromReceipt(receipt: { analysis: Array<{ key: string; i18nKey?: string }> } | null): FeedbackFormat | null {
   if (!receipt) return null;
   const chip = receipt.analysis.find((c) => c.key === "format");
@@ -110,7 +138,11 @@ export function AgentWorkspace() {
   const [stage, setStage] = useState<Stage>("upload");
   const [file, setFile] = useState<File | null>(null);
   // Sprint D — style chosen up-front. Drives the planner's intent preset.
-  const [style, setStyle] = useState<EditingStyle>("natural");
+  const [style, setStyleState] = useState<EditingStyle>(() => readPersistedStyle());
+  const setStyle = useCallback((next: EditingStyle) => {
+    setStyleState(next);
+    writePersistedStyle(next);
+  }, []);
   const [plan, setPlan] = useState<TaskPlan | null>(null);
   const [perTask, setPerTask] = useState<PerTask>({});
   const [done, setDone] = useState<Set<TaskId>>(new Set());
@@ -125,6 +157,11 @@ export function AgentWorkspace() {
   const controllerRef = useRef<AgentController | null>(null);
   const localBlobRef = useRef<string | null>(null);
   const runIdRef = useRef<string | null>(null);
+  // The style that the *currently displayed* result / failure was produced
+  // with. Retry and Refine must reuse this — never the live `style` state
+  // (which may have been changed after the run started) and never the
+  // "natural" default.
+  const committedStyleRef = useRef<EditingStyle>("natural");
   const projectIdRef = useRef<string | null>(null);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [rating, setRating] = useState<FeedbackRating | null>(null);
@@ -184,9 +221,12 @@ export function AgentWorkspace() {
   const startAgent = useCallback(
     async (
       sourceFile: File,
-      refinement: RefinementChoice = "none",
-      chosenStyle: EditingStyle = "natural",
+      refinement: RefinementChoice,
+      chosenStyle: EditingStyle,
     ) => {
+      // Freeze the style for this run so Retry/Refine reuse it even if the
+      // user changes the upload-screen selection afterwards.
+      committedStyleRef.current = chosenStyle;
       setStage("working");
       setError(null);
       setPerTask({});
@@ -502,7 +542,7 @@ export function AgentWorkspace() {
                   format: detectFormatFromReceipt(receipt),
                 });
               }
-              if (file) startAgent(file, choice);
+              if (file) startAgent(file, choice, committedStyleRef.current);
             }}
             onManual={() => {
               if (runIdRef.current) {
@@ -528,7 +568,7 @@ export function AgentWorkspace() {
             key="failed"
             t={t}
             error={error}
-            onRetry={() => file && startAgent(file, "none", style)}
+            onRetry={() => file && startAgent(file, "none", committedStyleRef.current)}
             onReset={() => {
               setStage("upload");
               setFile(null);

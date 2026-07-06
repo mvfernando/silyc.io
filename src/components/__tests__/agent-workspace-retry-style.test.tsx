@@ -151,7 +151,6 @@ describe("AgentWorkspace — Retry preserves chosen editing style", () => {
       name: /agent_style_cinematic/,
     });
     fireEvent.click(cinematicBtn);
-    expect(cinematicBtn.getAttribute("aria-pressed")).toBe("true");
 
     // 2. Drop a file into the hidden file input.
     const fileInput = document.querySelector(

@@ -528,7 +528,7 @@ export function AgentWorkspace() {
             key="failed"
             t={t}
             error={error}
-            onRetry={() => file && startAgent(file, "none")}
+            onRetry={() => file && startAgent(file, "none", style)}
             onReset={() => {
               setStage("upload");
               setFile(null);

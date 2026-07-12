@@ -68,11 +68,23 @@ async function runLocal(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<
   await ctx.waitWhilePaused();
   if (ctx.isCancelled()) throw new Error("cancelled");
   const segments = resolveSegments(ctx.cut);
+  const dims =
+    input.facts.width && input.facts.height
+      ? { width: input.facts.width, height: input.facts.height }
+      : undefined;
   const renderPlan = toRenderPlan({ segments }, {
     target: "ffmpeg-local",
     enhancedAudioUrl: ctx.enhancedAudioUrl ?? null,
+    sourceDimensions: dims,
+    aspectRatio: input.facts.aspectRatio,
+    orientation: input.facts.orientation,
   });
   const inv = toFfmpegInvocation(renderPlan, { durationSec: ctx.cut.durationSec });
+  if (dims) {
+    ctx.onLog(
+      `[render] source ${dims.width}×${dims.height} (${input.facts.aspectRatio ?? "?"} ${input.facts.orientation ?? "?"}) — preserving aspect ratio`,
+    );
+  }
   ctx.onLog(
     `rendering locally with ffmpeg.wasm — ${inv.streamCopyCount} stream-copy / ${inv.reencodeCount} re-encode segments`,
   );
@@ -120,16 +132,27 @@ async function runCloud(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<
 
   // 2. submit + poll Shotstack (backoff on transient errors)
   const segments = resolveSegments(ctx.cut);
+  const dims =
+    input.facts.width && input.facts.height
+      ? { width: input.facts.width, height: input.facts.height }
+      : undefined;
   const renderPlan = toRenderPlan({ segments }, {
     target: "shotstack",
     outputFormat: (ctx.params.exportOptions.container as string) ?? "mp4",
+    sourceDimensions: dims,
+    aspectRatio: input.facts.aspectRatio,
+    orientation: input.facts.orientation,
   });
   const payload = toShotstackPayload(renderPlan, {
     sourceUrl: signed.signedUrl,
     resolution: (ctx.params.exportOptions.resolution as "source") ?? "source",
     format: (ctx.params.exportOptions.container as "mp4") ?? "mp4",
   });
-  ctx.onLog(`shotstack payload: ${payload.keeps.length} keep ranges`);
+  ctx.onLog(
+    `shotstack payload: ${payload.keeps.length} keep ranges` +
+      (payload.aspectRatio ? ` · aspectRatio=${payload.aspectRatio}` : "") +
+      (dims ? ` · source ${dims.width}×${dims.height}` : ""),
+  );
   const job = await withBackoff(
     () => submitShotstackRender({ data: payload }),
     { attempts: 3, baseMs: 1500, isRetriable: isTransientCloudError },

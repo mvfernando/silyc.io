@@ -10,6 +10,10 @@ type SubmitInput = {
   resolution: "source" | "2160" | "1440" | "1080" | "720" | "480";
   format: "mp4" | "webm" | "mov";
   fps?: number;
+  /** Optional Shotstack aspectRatio label ("9:16", "16:9", "1:1", …). */
+  aspectRatio?: string;
+  /** Optional source dimensions (unused server-side today; kept for logs). */
+  sourceDimensions?: { width: number; height: number };
 };
 
 type ShotstackEnv = "sandbox" | "production";
@@ -64,6 +68,7 @@ export const submitShotstackRender = createServerFn({ method: "POST" })
         format: data.format,
         resolution: shotstackResolution(data.resolution),
         ...(data.fps ? { fps: data.fps } : {}),
+        ...(data.aspectRatio ? { aspectRatio: data.aspectRatio } : {}),
       },
     };
 

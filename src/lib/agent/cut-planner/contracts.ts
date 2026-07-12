@@ -12,6 +12,8 @@
  */
 
 import type { SilenceRange } from "@/components/silence-timeline";
+import type { AspectRatioLabel, Orientation } from "@/lib/aspect-ratio";
+import { classifyAspect } from "@/lib/aspect-ratio";
 
 // ---------------------------------------------------------------------------
 // MediaFacts
@@ -34,6 +36,10 @@ export type MediaFacts = {
     codec: string;
     width: number;
     height: number;
+    /** Standard label ("9:16", "16:9", …). Preservation contract keys off this. */
+    aspectRatio: AspectRatioLabel;
+    /** Portrait / landscape / square. Redundant with aspectRatio; kept for logs/UI. */
+    orientation: Orientation;
     fps: number;
     /** Real keyframe interval when probed; null = unknown (planner assumes 2s). */
     keyframeIntervalSec: number | null;
@@ -175,6 +181,14 @@ export type RenderPlan = {
   hints: Partial<{
     forceKeyFrames: number[];
     shotstackOutputFormat: string;
+    /** When true, adapters must NOT scale/crop/pad implicitly. */
+    preserveAspectRatio: boolean;
+    /** Source dimensions, in pixels. Adapters treat as authoritative output size. */
+    sourceDimensions: { width: number; height: number };
+    /** Detected label ("9:16", "16:9", …). Feeds Shotstack `output.aspectRatio`. */
+    aspectRatio: AspectRatioLabel;
+    /** portrait / landscape / square (log/UI only). */
+    orientation: Orientation;
   }>;
 };
 
@@ -201,6 +215,8 @@ type UploadValidationLike = {
   durationSec: number;
   width: number;
   height: number;
+  aspectRatio?: AspectRatioLabel;
+  orientation?: Orientation;
   hasAudio: boolean | "unknown";
   mime: string;
   ext: string;
@@ -219,6 +235,9 @@ export function mediaFactsFromUpload(
   opts?: { fingerprint?: string; language?: string | null; fps?: number },
 ): MediaFacts {
   const codecGuess = guessCodec(v.ext || v.mime);
+  const derivedAspect = classifyAspect(v.width, v.height);
+  const ratioLabel: AspectRatioLabel = v.aspectRatio ?? derivedAspect.ratio;
+  const orientation: Orientation = v.orientation ?? derivedAspect.orientation;
   return {
     source: {
       fileName: file.name,
@@ -237,6 +256,8 @@ export function mediaFactsFromUpload(
             codec: codecGuess.video,
             width: v.width,
             height: v.height,
+            aspectRatio: ratioLabel,
+            orientation,
             fps: opts?.fps ?? 30,
             keyframeIntervalSec: null,
           }

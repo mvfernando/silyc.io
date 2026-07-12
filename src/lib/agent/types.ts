@@ -15,6 +15,7 @@
  */
 
 import type { ExportOptions, SilenceRange } from "@/lib/ffmpeg-processor";
+import type { AspectRatioLabel, Orientation } from "@/lib/aspect-ratio";
 
 /** What the user wants this run to feel like. Drives the DecisionEngine. */
 export type RefinementChoice =
@@ -34,6 +35,14 @@ export type AnalysisFacts = {
   hasAudio: boolean;
   /** Language hint, when known (BCP-47 short code like "pt", "en"). */
   language?: string | null;
+  /** Displayed width in px (post-rotation). 0 = unknown. */
+  width?: number;
+  /** Displayed height in px (post-rotation). 0 = unknown. */
+  height?: number;
+  /** Detected aspect ratio label — feeds render preservation contract. */
+  aspectRatio?: AspectRatioLabel;
+  /** Portrait / landscape / square. */
+  orientation?: Orientation;
 };
 
 /** The task identifiers the runner understands. Stable strings — used in logs. */

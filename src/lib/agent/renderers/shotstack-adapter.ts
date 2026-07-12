@@ -14,6 +14,7 @@
  */
 import { keepsFromRenderPlan } from "../cut-planner/render-plan";
 import type { RenderPlan } from "../cut-planner/contracts";
+import { shotstackAspectRatio, type AspectRatioLabel } from "@/lib/aspect-ratio";
 
 export type ShotstackJobPayload = {
   sourceUrl: string;
@@ -21,6 +22,13 @@ export type ShotstackJobPayload = {
   resolution: "source" | "2160" | "1440" | "1080" | "720" | "480";
   format: "mp4" | "webm" | "mov";
   fps?: number;
+  /**
+   * Shotstack `output.aspectRatio`. When set the server function forwards
+   * it verbatim so the encoder never falls back to the default landscape.
+   */
+  aspectRatio?: string;
+  /** Source dimensions echoed for logs / snapshot tests. */
+  sourceDimensions?: { width: number; height: number };
 };
 
 export type ShotstackAdapterOptions = {
@@ -48,11 +56,18 @@ export function toShotstackPayload(
     (plan.hints.shotstackOutputFormat as ShotstackJobPayload["format"]) ??
     opts.format ??
     "mp4";
-  return {
+  const payload: ShotstackJobPayload = {
     sourceUrl: opts.sourceUrl,
     keeps,
     resolution: opts.resolution ?? "source",
     format,
     ...(opts.fps ? { fps: opts.fps } : {}),
   };
+  const aspectLabel = plan.hints.aspectRatio as AspectRatioLabel | undefined;
+  const aspect = aspectLabel ? shotstackAspectRatio(aspectLabel) : null;
+  if (aspect) payload.aspectRatio = aspect;
+  if (plan.hints.sourceDimensions) {
+    payload.sourceDimensions = { ...plan.hints.sourceDimensions };
+  }
+  return payload;
 }

@@ -324,7 +324,12 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
   const fpsChain = exportOptions.fps ? `,fps=${exportOptions.fps}` : "";
 
   const filter =
-    `[0:v]select='${videoExpr}',setpts=N/FRAME_RATE/TB${scaleChain}${fpsChain}[v];` +
+    // setsar=1 normalises sample-aspect-ratio across segments so concat/
+    // filter-graph output keeps the source's *displayed* dimensions instead
+    // of silently reverting to the first segment's SAR. Critical for
+    // vertical (9:16) sources that some browsers hand FFmpeg with a
+    // non-square SAR after rotation.
+    `[0:v]select='${videoExpr}',setpts=N/FRAME_RATE/TB,setsar=1${scaleChain}${fpsChain}[v];` +
     // afade on the concatenated stream removes the click at the very start/end
     // of the export. Per-segment crossfade isn't applied here — increasing
     // paddingSec is the recommended way to avoid clipping word boundaries.

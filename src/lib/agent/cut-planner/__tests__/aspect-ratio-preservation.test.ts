@@ -11,6 +11,7 @@ const seg = (index: number, keepStart: number, keepEnd: number): CutSegment => (
   keepStart,
   keepEnd,
   encoding: "re-encode",
+  distanceToKeyframeSec: 0,
 });
 
 /** Fixture list — the three canonical social formats plus one non-standard. */

@@ -336,7 +336,11 @@ function AppPage() {
       } else {
         setResume(null);
       }
-      toast.success(`${t.validation_ok} · ${formatDuration(v.durationSec)} · ${v.width}×${v.height}`);
+      const ratioSuffix =
+        v.aspectRatio && v.aspectRatio !== "unknown" ? ` · ${v.aspectRatio}` : "";
+      toast.success(
+        `${t.validation_ok} · ${formatDuration(v.durationSec)} · ${v.width}×${v.height}${ratioSuffix}`,
+      );
     } finally {
       setValidating(false);
     }

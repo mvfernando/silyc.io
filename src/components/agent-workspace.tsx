@@ -291,7 +291,25 @@ export function AgentWorkspace() {
         durationSec: validation?.durationSec ?? 0,
         hasAudio: validation ? validation.hasAudio !== false : true,
         language: null,
+        width: validation?.width || undefined,
+        height: validation?.height || undefined,
+        aspectRatio: validation?.aspectRatio,
+        orientation: validation?.orientation,
       };
+      if (validation?.width && validation?.height) {
+        const label =
+          validation.aspectRatio && validation.aspectRatio !== "unknown"
+            ? validation.aspectRatio
+            : `${validation.width}×${validation.height}`;
+        const key =
+          validation.orientation === "portrait"
+            ? "agent_aspect_detected_portrait"
+            : validation.orientation === "square"
+              ? "agent_aspect_detected_square"
+              : "agent_aspect_detected_landscape";
+        const raw = (t as Record<string, string>)[key];
+        if (raw) toast.info(raw.replace("{ratio}", label));
+      }
 
       const ctrl = runAgent(
         { file: sourceFile, facts, refinement, intent: chosenStyle, userId },

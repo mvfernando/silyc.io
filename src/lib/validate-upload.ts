@@ -4,12 +4,17 @@
 // dimensions, has a usable duration, and (best-effort) carries an audio track.
 
 import { LOCAL_RENDER_MAX_BYTES, MAX_UPLOAD_BYTES, formatFileSize } from "./upload-limits";
+import { classifyAspect, type AspectRatioLabel, type Orientation } from "./aspect-ratio";
 
 export type UploadValidation = {
   ok: boolean;
   durationSec: number;
   width: number;
   height: number;
+  /** Standardised label ("9:16", "16:9", ...) — defaults to "unknown" until decode succeeds. */
+  aspectRatio: AspectRatioLabel;
+  /** portrait / landscape / square — mirrors classifyAspect. */
+  orientation: Orientation;
   hasAudio: boolean | "unknown";
   mime: string;
   ext: string;
@@ -52,6 +57,8 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
       durationSec: 0,
       width: 0,
       height: 0,
+      aspectRatio: "unknown",
+      orientation: "unknown",
       hasAudio: "unknown",
       mime: file.type,
       ext,
@@ -74,6 +81,8 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
       durationSec: 0,
       width: 0,
       height: 0,
+      aspectRatio: "unknown",
+      orientation: "unknown",
       hasAudio: "unknown",
       mime: file.type,
       ext,
@@ -105,6 +114,7 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
     const durationSec = isFinite(video.duration) ? video.duration : 0;
     const width = video.videoWidth;
     const height = video.videoHeight;
+    const aspect = classifyAspect(width, height);
 
     if (!width || !height) {
       checks.push({ id: "video_track", status: "fail", detail: "no decodable video track" });
@@ -113,6 +123,8 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
         durationSec,
         width,
         height,
+        aspectRatio: aspect.ratio,
+        orientation: aspect.orientation,
         hasAudio: "unknown",
         mime: file.type,
         ext,
@@ -121,7 +133,11 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
         reasonKey: "err_validate_no_video",
       };
     }
-    checks.push({ id: "video_track", status: "pass", detail: `${width}×${height}` });
+    checks.push({
+      id: "video_track",
+      status: "pass",
+      detail: `${width}×${height} · ${aspect.ratio} ${aspect.orientation}`,
+    });
     if (durationSec <= 0.1) {
       checks.push({ id: "duration", status: "fail", detail: `${durationSec.toFixed(2)}s` });
       return {
@@ -129,6 +145,8 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
         durationSec,
         width,
         height,
+        aspectRatio: aspect.ratio,
+        orientation: aspect.orientation,
         hasAudio: "unknown",
         mime: file.type,
         ext,
@@ -144,6 +162,8 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
         durationSec,
         width,
         height,
+        aspectRatio: aspect.ratio,
+        orientation: aspect.orientation,
         hasAudio: "unknown",
         mime: file.type,
         ext,
@@ -189,6 +209,8 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
         durationSec,
         width,
         height,
+        aspectRatio: aspect.ratio,
+        orientation: aspect.orientation,
         hasAudio,
         mime: file.type,
         ext,
@@ -204,7 +226,19 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
     });
     checks.push({ id: "decode", status: "pass", detail: "metadata decoded" });
 
-    return { ok: true, durationSec, width, height, hasAudio, mime: file.type, ext, sizeMB, checks };
+    return {
+      ok: true,
+      durationSec,
+      width,
+      height,
+      aspectRatio: aspect.ratio,
+      orientation: aspect.orientation,
+      hasAudio,
+      mime: file.type,
+      ext,
+      sizeMB,
+      checks,
+    };
   } catch (err) {
     checks.push({
       id: "decode",
@@ -216,6 +250,8 @@ export async function validateUpload(file: File): Promise<UploadValidation> {
       durationSec: 0,
       width: 0,
       height: 0,
+      aspectRatio: "unknown",
+      orientation: "unknown",
       hasAudio: "unknown",
       mime: file.type,
       ext,

@@ -24,6 +24,7 @@
 
 import type { CutPlan } from "./types";
 import type { RenderPlan, RenderOp, RenderTarget } from "./contracts";
+import type { AspectRatioLabel, Orientation } from "@/lib/aspect-ratio";
 
 export type ToRenderPlanOptions = {
   target: RenderTarget;
@@ -33,6 +34,17 @@ export type ToRenderPlanOptions = {
   enhancedAudioMixDb?: number;
   /** Output container hint (mp4/webm/mov). Only Shotstack reads this. */
   outputFormat?: string;
+  /**
+   * Source video dimensions. When provided, the plan will carry them under
+   * `hints.sourceDimensions` and set `hints.preserveAspectRatio = true`, so
+   * every downstream adapter treats the source ratio as authoritative and
+   * refuses to introduce implicit scale/crop/pad.
+   */
+  sourceDimensions?: { width: number; height: number };
+  /** Detected aspect ratio label — required for Shotstack `output.aspectRatio`. */
+  aspectRatio?: AspectRatioLabel;
+  /** Orientation, kept for logs / receipts. */
+  orientation?: Orientation;
 };
 
 export function toRenderPlan(
@@ -75,12 +87,28 @@ export function toRenderPlan(
   }
   const uniqueKF = Array.from(new Set(forceKeyFrames)).sort((a, b) => a - b);
 
+  const preserveHints: Partial<RenderPlan["hints"]> = {};
+  if (opts.sourceDimensions) {
+    preserveHints.preserveAspectRatio = true;
+    preserveHints.sourceDimensions = {
+      width: opts.sourceDimensions.width,
+      height: opts.sourceDimensions.height,
+    };
+  }
+  if (opts.aspectRatio && opts.aspectRatio !== "unknown") {
+    preserveHints.aspectRatio = opts.aspectRatio;
+  }
+  if (opts.orientation && opts.orientation !== "unknown") {
+    preserveHints.orientation = opts.orientation;
+  }
+
   return {
     target: opts.target,
     ops,
     hints: {
       ...(uniqueKF.length > 0 ? { forceKeyFrames: uniqueKF } : {}),
       ...(opts.outputFormat ? { shotstackOutputFormat: opts.outputFormat } : {}),
+      ...preserveHints,
     },
   };
 }

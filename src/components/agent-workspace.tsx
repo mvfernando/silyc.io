@@ -307,8 +307,8 @@ export function AgentWorkspace() {
             : validation.orientation === "square"
               ? "agent_aspect_detected_square"
               : "agent_aspect_detected_landscape";
-        const raw = (t as Record<string, string>)[key];
-        if (raw) toast.info(raw.replace("{ratio}", label));
+        const raw = (t as unknown as Record<string, unknown>)[key];
+        if (typeof raw === "string") toast.info(raw.replace("{ratio}", label));
       }
 
       const ctrl = runAgent(

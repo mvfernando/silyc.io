@@ -1048,6 +1048,9 @@ function ReadyStage({
   outputUrl,
   originalFile,
   results,
+  facts,
+  style,
+  thresholdDb,
   showRefine,
   rating,
   savedProjectId,
@@ -1068,6 +1071,9 @@ function ReadyStage({
   outputUrl: string | null;
   originalFile: File | null;
   results: TaskResults | null;
+  facts: AnalysisFacts | null;
+  style: EditingStyle;
+  thresholdDb: number;
   showRefine: boolean;
   rating: FeedbackRating | null;
   savedProjectId: string | null;
@@ -1090,6 +1096,68 @@ function ReadyStage({
   useEffect(() => () => {
     if (originalUrl) URL.revokeObjectURL(originalUrl);
   }, [originalUrl]);
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [reExportBusy, setReExportBusy] = useState<null | ExportOptions["container"]>(null);
+  const [reExportPct, setReExportPct] = useState(0);
+  const [reExportUrl, setReExportUrl] = useState<string | null>(null);
+  const [reExportContainer, setReExportContainer] = useState<ExportOptions["container"]>("mp4");
+  useEffect(() => () => {
+    if (reExportUrl) URL.revokeObjectURL(reExportUrl);
+  }, [reExportUrl]);
+
+  const effectiveOutputUrl = reExportUrl ?? outputUrl;
+  const effectiveExt =
+    reExportUrl != null ? reExportContainer : (originalFile?.name.split(".").pop() ?? "mp4");
+
+  const canReport = facts && results;
+  const canReExport = !!originalFile && !!results?.cut;
+
+  const handleDownloadReport = () => {
+    if (!facts) return;
+    const md = buildMarkdownReport({
+      facts,
+      receipt,
+      results,
+      style,
+      thresholdDb,
+    });
+    const base = (facts.fileName || "silyc").replace(/\.[^.]+$/, "");
+    downloadMarkdownReport(`silyc-report-${base}.md`, md);
+  };
+
+  const runReExport = async (container: ExportOptions["container"]) => {
+    if (!originalFile || !results?.cut || reExportBusy) return;
+    setReExportBusy(container);
+    setReExportPct(0);
+    try {
+      const opts: ExportOptions = { ...defaultExportOptions, container };
+      const out = await processVideoRemoveSilence(originalFile, {
+        thresholdDb: -35,
+        minPauseSec: 0.5,
+        paddingSec: 0.1,
+        exportOptions: opts,
+        cachedSilences: results.cut.silences,
+        cachedDuration: results.cut.durationSec,
+        applyLoudnorm: style === "cinematic",
+        audioFadeInSec: style === "cinematic" ? 0.02 : 0,
+        onProgress: (e) => {
+          if (e.phase === "encode" || e.phase === "audio") {
+            setReExportPct(Math.round(Math.min(1, e.progress) * 100));
+          }
+        },
+      });
+      const url = URL.createObjectURL(out.outputBlob);
+      if (reExportUrl) URL.revokeObjectURL(reExportUrl);
+      setReExportUrl(url);
+      setReExportContainer(container);
+      toast.success(t.agent_reexport_done);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReExportBusy(null);
+    }
+  };
 
   return (
     <motion.div

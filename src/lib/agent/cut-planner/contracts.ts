@@ -97,7 +97,8 @@ export type DecisionFactor =
   | "speaker_change"
   | "intent_preset"
   | "head_trim"
-  | "tail_trim";
+  | "tail_trim"
+  | "waveform_silence";
 
 export type DecisionExplanation = {
   factor: DecisionFactor;

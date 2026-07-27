@@ -120,4 +120,8 @@ export type PlannerOptions = {
   removeFillers?: boolean;
   /** EditingIntent applied to this run (Sprint A — feeds intentHash). */
   intent?: import("./contracts").EditingIntent;
+  /** RMS threshold (dBFS) for waveform-first silence detection. Default −40. */
+  thresholdDb?: number;
+  /** Minimum silent duration to consider (seconds). Default 0.35. */
+  minSilenceSec?: number;
 };

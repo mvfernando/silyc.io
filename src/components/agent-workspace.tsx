@@ -1259,9 +1259,9 @@ function ReadyStage({
       )}
 
       {/* Preview */}
-      {outputUrl && (
+      {effectiveOutputUrl && (
         <div className="mt-10 rounded-2xl border border-border/60 overflow-hidden bg-black">
-          <video src={outputUrl} controls className="w-full max-h-[60vh]" />
+          <video src={effectiveOutputUrl} controls className="w-full max-h-[60vh]" />
         </div>
       )}
 
@@ -1270,13 +1270,27 @@ function ReadyStage({
 
       {/* Actions */}
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        {outputUrl && (
+        {effectiveOutputUrl && (
           <a
-            href={outputUrl}
-            download={originalFile ? `silyc-${originalFile.name}` : "silyc-output.mp4"}
+            href={effectiveOutputUrl}
+            download={
+              originalFile
+                ? `silyc-${originalFile.name.replace(/\.[^.]+$/, "")}.${effectiveExt}`
+                : `silyc-output.${effectiveExt}`
+            }
           >
             <Button size="lg">{t.agent_download}</Button>
           </a>
+        )}
+        {originalUrl && effectiveOutputUrl && (
+          <Button variant="outline" size="lg" onClick={() => setPreviewOpen(true)}>
+            {t.agent_preview_ab}
+          </Button>
+        )}
+        {canReport && (
+          <Button variant="outline" size="lg" onClick={handleDownloadReport}>
+            {t.agent_report_download}
+          </Button>
         )}
         <Button variant="outline" size="lg" onClick={onAskRefine}>
           {t.agent_refine}
@@ -1285,6 +1299,51 @@ function ReadyStage({
           {t.agent_new_video}
         </Button>
       </div>
+
+      {canReExport && (
+        <div className="mt-6 mx-auto max-w-xl rounded-2xl border border-border/60 bg-muted/10 p-5">
+          <p className="text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+            {t.agent_reexport_title}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            {(["mp4", "webm", "mov"] as const).map((c) => (
+              <Button
+                key={c}
+                variant="ghost"
+                size="sm"
+                disabled={reExportBusy != null}
+                onClick={() => runReExport(c)}
+              >
+                {reExportBusy === c
+                  ? `${t.agent_reexport_running} ${reExportPct}%`
+                  : c === "mp4"
+                    ? t.agent_reexport_mp4
+                    : c === "webm"
+                      ? t.agent_reexport_webm
+                      : t.agent_reexport_mov}
+              </Button>
+            ))}
+          </div>
+          {reExportBusy && (
+            <div className="mt-3">
+              <Progress value={reExportPct} />
+            </div>
+          )}
+        </div>
+      )}
+
+      <PreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        sourceUrl={originalUrl ?? undefined}
+        outputUrl={effectiveOutputUrl ?? undefined}
+        downloadUrl={effectiveOutputUrl ?? undefined}
+        downloadName={
+          originalFile
+            ? `silyc-${originalFile.name.replace(/\.[^.]+$/, "")}.${effectiveExt}`
+            : `silyc-output.${effectiveExt}`
+        }
+      />
       {savedProjectId && (
         <p className="mt-4 text-center text-xs text-muted-foreground">
           <Link

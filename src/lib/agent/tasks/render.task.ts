@@ -95,7 +95,7 @@ async function runLocal(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<
   // Phase 4 — resolve the intent so the audio chain (fade + loudnorm) is
   // driven by the preset instead of hard-coded defaults. Falls back to
   // `natural` (no fade / no loudnorm) when no style was chosen.
-  const style = input.intent ?? ctx.cut.plan?.intent?.style;
+  const style = input.intent ?? null;
   const resolved = resolveIntent(style ? { style } : null);
   ctx.onLog(
     `audio chain — fadeIn=${resolved.fadeInSec}s, loudnorm=${resolved.applyLoudnorm ? "on" : "off"} (preset=${resolved.style})`,

@@ -446,9 +446,9 @@ export function AgentWorkspace() {
         return;
       }
       setFile(f);
-      await startAgent(f, "none", style);
+      await startAgent(f, "none", style, thresholdDb);
     },
-    [startAgent, style, t.agent_file_too_large],
+    [startAgent, style, thresholdDb, t.agent_file_too_large],
   );
 
   const globalProgress = useMemo(() => {
@@ -596,7 +596,7 @@ export function AgentWorkspace() {
                   format: detectFormatFromReceipt(receipt),
                 });
               }
-              if (file) startAgent(file, choice, committedStyleRef.current);
+              if (file) startAgent(file, choice, committedStyleRef.current, committedThresholdRef.current);
             }}
             onManual={() => {
               if (runIdRef.current) {
@@ -622,7 +622,7 @@ export function AgentWorkspace() {
             key="failed"
             t={t}
             error={error}
-            onRetry={() => file && startAgent(file, "none", committedStyleRef.current)}
+            onRetry={() => file && startAgent(file, "none", committedStyleRef.current, committedThresholdRef.current)}
             onReset={() => {
               setStage("upload");
               setFile(null);

@@ -566,6 +566,9 @@ export function AgentWorkspace() {
             outputUrl={outputUrl}
             originalFile={file}
             results={results}
+            facts={lastFacts}
+            style={committedStyleRef.current}
+            thresholdDb={committedThresholdRef.current}
             showRefine={showRefine}
             rating={rating}
             savedProjectId={savedProjectId}

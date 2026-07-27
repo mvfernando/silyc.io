@@ -258,6 +258,8 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
     cachedSilences,
     cachedDuration,
     onDetectionComplete,
+    audioFadeInSec = 0,
+    applyLoudnorm = false,
   } = opts;
   const ffmpeg = await loadFFmpeg(onLog);
   onProgress?.({ phase: "load", progress: 1 });

@@ -180,14 +180,14 @@ export function planCuts(
     if (decision === "remove") {
       const start = gap.start + padding;
       const end = gap.end - padding;
-      if (end > start) cut = { start, end };
+      if (end > start) cut = { start, end, rmsDb: gap.rmsDb };
     } else if (decision === "shorten") {
       const keepSec = targetShortenSec(gap);
       const removeAmount = Math.max(0, gap.durationSec - keepSec);
       const half = removeAmount / 2;
       // Remove from both sides equally so the kept fragment stays centred.
-      const leftCut: SilenceRange = { start: gap.start, end: gap.start + half };
-      const rightCut: SilenceRange = { start: gap.end - half, end: gap.end };
+      const leftCut: SilenceRange = { start: gap.start, end: gap.start + half, rmsDb: gap.rmsDb };
+      const rightCut: SilenceRange = { start: gap.end - half, end: gap.end, rmsDb: gap.rmsDb };
       const left: CutCandidate = {
         kind: "gap",
         gap,
@@ -270,7 +270,7 @@ export function planCuts(
       const a = snapToZeroCrossing(opts.audioSamples, c.cut.start, opts.audioSampleRate);
       const b = snapToZeroCrossing(opts.audioSamples, c.cut.end, opts.audioSampleRate);
       if (a.snapped || b.snapped) {
-        c.snappedCut = { start: a.time, end: b.time };
+        c.snappedCut = { start: a.time, end: b.time, rmsDb: c.cut.rmsDb };
         log.push(logForSnap(c, a.snapped ? a.deltaMs : b.deltaMs));
       }
     }

@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useBlocker, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
+import { Slider } from "@/components/ui/slider";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";

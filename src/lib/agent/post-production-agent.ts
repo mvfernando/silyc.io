@@ -37,7 +37,12 @@ export function runAgent(
   const promise: Promise<{ results: TaskResults; receipt: ValueReceipt }> =
     (async () => {
       try {
-        const plan = decide(input.facts, input.refinement, input.intent);
+        const plan = decide(
+          input.facts,
+          input.refinement,
+          input.intent,
+          input.thresholdDb,
+        );
         let insights: ContentInsights | undefined;
         const results = await runPlan(plan, input, {
           isCancelled: () => cancelled,

@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useBlocker, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
+import { Slider } from "@/components/ui/slider";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -79,6 +80,32 @@ type Stage = "upload" | "working" | "ready" | "failed";
 // back to "natural".
 const STYLE_STORAGE_KEY = "silyc:agent:style";
 const VALID_STYLES: readonly EditingStyle[] = ["natural", "dynamic", "cinematic"];
+// Phase 3 — waveform silence threshold (dBFS). Slider range [-50, -25], default -40.
+const THRESHOLD_STORAGE_KEY = "silyc:agent:threshold";
+const THRESHOLD_MIN = -50;
+const THRESHOLD_MAX = -25;
+const THRESHOLD_DEFAULT = -40;
+
+function readPersistedThreshold(): number {
+  if (typeof window === "undefined") return THRESHOLD_DEFAULT;
+  try {
+    const raw = window.localStorage.getItem(THRESHOLD_STORAGE_KEY);
+    const n = raw == null ? NaN : Number(raw);
+    if (Number.isFinite(n) && n >= THRESHOLD_MIN && n <= THRESHOLD_MAX) return n;
+  } catch {
+    // ignore
+  }
+  return THRESHOLD_DEFAULT;
+}
+
+function writePersistedThreshold(next: number) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(THRESHOLD_STORAGE_KEY, String(next));
+  } catch {
+    // ignore
+  }
+}
 
 function readPersistedStyle(): EditingStyle {
   if (typeof window === "undefined") return "natural";
@@ -143,6 +170,12 @@ export function AgentWorkspace() {
     setStyleState(next);
     writePersistedStyle(next);
   }, []);
+  // Phase 3 — sensitivity slider (dBFS threshold for waveform silence).
+  const [thresholdDb, setThresholdDbState] = useState<number>(() => readPersistedThreshold());
+  const setThresholdDb = useCallback((next: number) => {
+    setThresholdDbState(next);
+    writePersistedThreshold(next);
+  }, []);
   const [plan, setPlan] = useState<TaskPlan | null>(null);
   const [perTask, setPerTask] = useState<PerTask>({});
   const [done, setDone] = useState<Set<TaskId>>(new Set());
@@ -162,6 +195,8 @@ export function AgentWorkspace() {
   // (which may have been changed after the run started) and never the
   // "natural" default.
   const committedStyleRef = useRef<EditingStyle>("natural");
+  // Freeze the sensitivity for the current run so Retry/Refine reuse it.
+  const committedThresholdRef = useRef<number>(THRESHOLD_DEFAULT);
   const projectIdRef = useRef<string | null>(null);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [rating, setRating] = useState<FeedbackRating | null>(null);
@@ -223,10 +258,12 @@ export function AgentWorkspace() {
       sourceFile: File,
       refinement: RefinementChoice,
       chosenStyle: EditingStyle,
+      chosenThresholdDb: number,
     ) => {
       // Freeze the style for this run so Retry/Refine reuse it even if the
       // user changes the upload-screen selection afterwards.
       committedStyleRef.current = chosenStyle;
+      committedThresholdRef.current = chosenThresholdDb;
       setStage("working");
       setError(null);
       setPerTask({});
@@ -312,7 +349,7 @@ export function AgentWorkspace() {
       }
 
       const ctrl = runAgent(
-        { file: sourceFile, facts, refinement, intent: chosenStyle, userId },
+        { file: sourceFile, facts, refinement, intent: chosenStyle, thresholdDb: chosenThresholdDb, userId },
         {
           onEvent: (e: AgentEvent) => {
             if (e.type === "plan") setPlan(e.plan);
@@ -410,9 +447,9 @@ export function AgentWorkspace() {
         return;
       }
       setFile(f);
-      await startAgent(f, "none", style);
+      await startAgent(f, "none", style, thresholdDb);
     },
-    [startAgent, style, t.agent_file_too_large],
+    [startAgent, style, thresholdDb, t.agent_file_too_large],
   );
 
   const globalProgress = useMemo(() => {
@@ -495,6 +532,8 @@ export function AgentWorkspace() {
             t={t}
             style={style}
             onStyleChange={setStyle}
+            thresholdDb={thresholdDb}
+            onThresholdChange={setThresholdDb}
             onFile={handleFile}
             onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
           />
@@ -560,7 +599,7 @@ export function AgentWorkspace() {
                   format: detectFormatFromReceipt(receipt),
                 });
               }
-              if (file) startAgent(file, choice, committedStyleRef.current);
+              if (file) startAgent(file, choice, committedStyleRef.current, committedThresholdRef.current);
             }}
             onManual={() => {
               if (runIdRef.current) {
@@ -586,7 +625,7 @@ export function AgentWorkspace() {
             key="failed"
             t={t}
             error={error}
-            onRetry={() => file && startAgent(file, "none", committedStyleRef.current)}
+            onRetry={() => file && startAgent(file, "none", committedStyleRef.current, committedThresholdRef.current)}
             onReset={() => {
               setStage("upload");
               setFile(null);
@@ -607,12 +646,16 @@ function UploadStage({
   t,
   style,
   onStyleChange,
+  thresholdDb,
+  onThresholdChange,
   onFile,
   onLegacy,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   style: EditingStyle;
   onStyleChange: (s: EditingStyle) => void;
+  thresholdDb: number;
+  onThresholdChange: (n: number) => void;
   onFile: (f: File) => void;
   onLegacy: () => void;
 }) {
@@ -674,6 +717,32 @@ function UploadStage({
               </button>
             );
           })}
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <div className="flex items-baseline justify-between mb-2">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground/70">
+            {t.agent_sensitivity_title}
+          </p>
+          <p className="text-xs font-mono text-foreground/80 tabular-nums">
+            {thresholdDb} dBFS
+          </p>
+        </div>
+        <Slider
+          value={[thresholdDb]}
+          min={THRESHOLD_MIN}
+          max={THRESHOLD_MAX}
+          step={1}
+          onValueChange={(v) => onThresholdChange(v[0] ?? THRESHOLD_DEFAULT)}
+          aria-label={t.agent_sensitivity_title}
+        />
+        <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground/70">
+          <span>{t.agent_sensitivity_aggressive}</span>
+          <span className="text-muted-foreground/90">
+            {t.agent_sensitivity_hint.replace("{db}", String(thresholdDb))}
+          </span>
+          <span>{t.agent_sensitivity_conservative}</span>
         </div>
       </div>
 

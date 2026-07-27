@@ -10,6 +10,8 @@ import type { WhisperChunk } from "@/lib/replicate.functions";
 import { logForCandidate, logForSegment, logForSnap } from "./decision-log";
 import { planSegments } from "./encoding-strategy";
 import { extractGaps } from "./features";
+import { endsWithSentence, endsWithSoftBoundary } from "./fillers";
+import { speakingRateAround } from "./features";
 import { isFiller } from "./fillers";
 import {
   classifyDecision,
@@ -24,6 +26,7 @@ import type {
   CutPlan,
   DecisionLogEntry,
   PlannerOptions,
+  SilenceGap,
   Word,
 } from "./types";
 import {

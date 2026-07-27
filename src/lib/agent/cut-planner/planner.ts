@@ -366,3 +366,75 @@ function keptSegmentsFromSilences(
   if (cursor < durationSec) keep.push({ start: cursor, end: durationSec });
   return keep;
 }
+
+/**
+ * Convert waveform-detected silences into transcript-aware SilenceGaps.
+ *
+ * Each waveform silence is clipped so it never intersects a spoken word
+ * (minus `padding`). The neighbouring words (if any) become `before`/`after`
+ * so the downstream scoring, head/tail detection and boundary reasons still
+ * work unchanged.
+ */
+function waveformSilencesToGaps(
+  silences: WaveformSilence[],
+  words: Word[],
+  totalDuration: number,
+  padding: number,
+): SilenceGap[] {
+  if (words.length === 0) return [];
+  const first = words[0];
+  const last = words[words.length - 1];
+  const gaps: SilenceGap[] = [];
+
+  // Head gap — always emit when there is space before the first word so the
+  // renderer trims the intro even when it does not clear the RMS threshold.
+  if (first.start > 0) {
+    gaps.push(buildWaveformGap(0, first.start, undefined, first, words, totalDuration));
+  }
+
+  for (const s of silences) {
+    // Skip regions fully outside the spoken content — head/tail are handled
+    // separately (above / below) and cover 0..first.start and last.end..total.
+    if (s.end <= first.start || s.start >= last.end) continue;
+
+    // Find the neighbouring words and clip against them (+ padding) so we
+    // never truncate a spoken word.
+    const before = [...words].reverse().find((w) => w.end <= s.start + 1e-3);
+    const after = words.find((w) => w.start >= s.end - 1e-3);
+    const lo = before ? before.end + padding : s.start;
+    const hi = after ? after.start - padding : s.end;
+    const start = Math.max(s.start, lo);
+    const end = Math.min(s.end, hi);
+    if (end - start < 0.05) continue;
+    gaps.push(buildWaveformGap(start, end, before, after, words, totalDuration));
+  }
+
+  // Tail gap
+  if (totalDuration > last.end) {
+    gaps.push(buildWaveformGap(last.end, totalDuration, last, undefined, words, totalDuration));
+  }
+
+  return gaps;
+}
+
+function buildWaveformGap(
+  start: number,
+  end: number,
+  before: Word | undefined,
+  after: Word | undefined,
+  allWords: Word[],
+  totalDuration: number,
+): SilenceGap {
+  const midpoint = (start + end) / 2;
+  return {
+    start,
+    end,
+    durationSec: end - start,
+    before,
+    after,
+    endsWithSentence: before ? endsWithSentence(before.text) : false,
+    endsWithSoftBoundary: before ? endsWithSoftBoundary(before.text) : false,
+    localSpeakingRate: speakingRateAround(allWords, midpoint, 3),
+    relPosition: totalDuration > 0 ? Math.min(1, Math.max(0, midpoint / totalDuration)) : 0,
+  };
+}

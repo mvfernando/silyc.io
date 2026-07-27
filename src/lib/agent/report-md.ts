@@ -101,9 +101,9 @@ export function buildMarkdownReport(input: BuildReportInput): string {
     lines.push(`| # | Início | Fim | Duração | Encoding |`);
     lines.push(`|---|--------|-----|---------|----------|`);
     cut.plan.segments.slice(0, 200).forEach((seg, i) => {
-      const dur = seg.end - seg.start;
+      const dur = seg.keepEnd - seg.keepStart;
       lines.push(
-        `| ${i + 1} | ${fmtSec(seg.start)} | ${fmtSec(seg.end)} | ${fmtSec(dur)} | ${seg.encoding ?? "—"} |`,
+        `| ${i + 1} | ${fmtSec(seg.keepStart)} | ${fmtSec(seg.keepEnd)} | ${fmtSec(dur)} | ${seg.encoding ?? "—"} |`,
       );
     });
     lines.push("");

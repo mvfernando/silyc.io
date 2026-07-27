@@ -645,12 +645,16 @@ function UploadStage({
   t,
   style,
   onStyleChange,
+  thresholdDb,
+  onThresholdChange,
   onFile,
   onLegacy,
 }: {
   t: ReturnType<typeof useI18n>["t"];
   style: EditingStyle;
   onStyleChange: (s: EditingStyle) => void;
+  thresholdDb: number;
+  onThresholdChange: (n: number) => void;
   onFile: (f: File) => void;
   onLegacy: () => void;
 }) {

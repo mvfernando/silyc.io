@@ -1,9 +1,9 @@
 /**
  * Regression test for the "Try again" → chosen editing style bug.
  *
- * When a run fails and the user hits Retry, the second run MUST reuse the
- * style (Natural/Dynamic/Cinematic) the user picked before the first run —
- * never silently fall back to the "natural" default.
+ * Zero-config workspace: the user no longer picks a style. The intent
+ * ("natural") is derived internally and frozen for the run so Retry
+ * always re-runs with the exact same intent the failed run used.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
@@ -143,48 +143,32 @@ describe("AgentWorkspace — Retry preserves chosen editing style", () => {
     }
   });
 
-  it("re-runs with the originally selected style (cinematic) after Try again", async () => {
+  it("re-runs with the same (auto) intent after Try again", async () => {
     render(<AgentWorkspace />);
 
-    // 1. Pick the Cinematic style on the upload screen.
-    const cinematicBtn = await screen.findByRole("button", {
-      name: /agent_style_cinematic/,
-    });
-    fireEvent.click(cinematicBtn);
-
-    // 2. Drop a file into the hidden file input.
+    // 1. Drop a file into the hidden file input.
     const fileInput = document.querySelector(
       'input[type="file"]',
     ) as HTMLInputElement;
     Object.defineProperty(fileInput, "files", { value: [fakeFile()] });
     fireEvent.change(fileInput);
 
-    // 3. Wait for runAgent to be invoked with cinematic.
+    // 2. Wait for runAgent to be invoked with the auto intent.
     await waitFor(() => expect(runAgentCalls.length).toBe(1));
-    expect(runAgentCalls[0].intent).toBe("cinematic");
+    expect(runAgentCalls[0].intent).toBe("natural");
 
-    // 4. Fail the first run.
+    // 3. Fail the first run.
     firstRunReject?.(new Error("boom"));
 
-    // 5. Wait for the failed stage → Try again button.
+    // 4. Wait for the failed stage → Try again button.
     const retryBtn = await screen.findByRole("button", { name: /agent_retry/ });
     fireEvent.click(retryBtn);
 
-    // 6. Second call must reuse cinematic, NOT the "natural" default.
+    // 5. Second call must reuse the exact same intent.
     await waitFor(() => expect(runAgentCalls.length).toBe(2));
-    expect(runAgentCalls[1].intent).toBe("cinematic");
-    expect(runAgentCalls[1].intent).not.toBe("natural");
+    expect(runAgentCalls[1].intent).toBe(runAgentCalls[0].intent);
 
     // Silence unused-variable lint for the second-run shim.
     void secondRunResolveShim;
-  });
-
-  it("persists the chosen style in localStorage", async () => {
-    render(<AgentWorkspace />);
-    const dynamicBtn = await screen.findByRole("button", {
-      name: /agent_style_dynamic/,
-    });
-    fireEvent.click(dynamicBtn);
-    expect(window.localStorage.getItem("silyc:agent:style")).toBe("dynamic");
   });
 });

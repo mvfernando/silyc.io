@@ -186,6 +186,7 @@ export function AgentWorkspace() {
   const [results, setResults] = useState<TaskResults | null>(null);
   const [receipt, setReceipt] = useState<ValueReceipt | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastFacts, setLastFacts] = useState<AnalysisFacts | null>(null);
 
   const controllerRef = useRef<AgentController | null>(null);
   const localBlobRef = useRef<string | null>(null);

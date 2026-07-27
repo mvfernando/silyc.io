@@ -79,6 +79,32 @@ type Stage = "upload" | "working" | "ready" | "failed";
 // back to "natural".
 const STYLE_STORAGE_KEY = "silyc:agent:style";
 const VALID_STYLES: readonly EditingStyle[] = ["natural", "dynamic", "cinematic"];
+// Phase 3 — waveform silence threshold (dBFS). Slider range [-50, -25], default -40.
+const THRESHOLD_STORAGE_KEY = "silyc:agent:threshold";
+const THRESHOLD_MIN = -50;
+const THRESHOLD_MAX = -25;
+const THRESHOLD_DEFAULT = -40;
+
+function readPersistedThreshold(): number {
+  if (typeof window === "undefined") return THRESHOLD_DEFAULT;
+  try {
+    const raw = window.localStorage.getItem(THRESHOLD_STORAGE_KEY);
+    const n = raw == null ? NaN : Number(raw);
+    if (Number.isFinite(n) && n >= THRESHOLD_MIN && n <= THRESHOLD_MAX) return n;
+  } catch {
+    // ignore
+  }
+  return THRESHOLD_DEFAULT;
+}
+
+function writePersistedThreshold(next: number) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(THRESHOLD_STORAGE_KEY, String(next));
+  } catch {
+    // ignore
+  }
+}
 
 function readPersistedStyle(): EditingStyle {
   if (typeof window === "undefined") return "natural";

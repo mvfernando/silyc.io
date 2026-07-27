@@ -32,6 +32,18 @@ export type ResolvedIntent = {
    */
   scoreScale: number;
   /**
+   * Phase 4 — audio fade-in applied at each kept-segment boundary. Only
+   * `cinematic` keeps a soft 20ms fade; `natural`/`dynamic` set 0 because
+   * fading a real acoustic silence produces an audible "suck-in".
+   */
+  fadeInSec: number;
+  /**
+   * Phase 4 — apply EBU R128 loudness normalisation on the final mix.
+   * Off by default (was globally on, which the user reported as "áudio
+   * sofreu modificações"). `cinematic` opts in.
+   */
+  applyLoudnorm: boolean;
+  /**
    * When the style materially shifts a decision, planner appends this
    * explanation so the receipt shows *why* the preset changed the outcome.
    */
@@ -53,6 +65,8 @@ const PRESETS: Record<EditingStyle, ResolvedIntent> = {
     protectedTailSec: 0.5,
     paddingSec: 0.1,
     scoreScale: 0.9,
+    fadeInSec: 0,
+    applyLoudnorm: false,
     explanationDetail: "natural preset — keeps breathing room",
   },
   dynamic: {
@@ -64,6 +78,8 @@ const PRESETS: Record<EditingStyle, ResolvedIntent> = {
     protectedTailSec: 0.25,
     paddingSec: 0.06,
     scoreScale: 1.15,
+    fadeInSec: 0,
+    applyLoudnorm: false,
     explanationDetail: "dynamic preset — tighter pacing",
   },
   cinematic: {
@@ -75,6 +91,8 @@ const PRESETS: Record<EditingStyle, ResolvedIntent> = {
     protectedTailSec: 0.75,
     paddingSec: 0.15,
     scoreScale: 0.75,
+    fadeInSec: 0.02,
+    applyLoudnorm: true,
     explanationDetail: "cinematic preset — preserves dramatic pauses",
   },
 };

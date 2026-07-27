@@ -154,6 +154,17 @@ export type ProcessOptions = {
   cachedDuration?: number;
   // When provided, called when detection completes, before encoding starts.
   onDetectionComplete?: (data: { silences: SilenceRange[]; totalDuration: number }) => void;
+  /**
+   * Phase 4 — audio fade-in at the very start of the assembled track.
+   * Default 0 (no fade). Only cinematic-preset callers should turn this on;
+   * fading a real acoustic silence sounds like a "suck-in" on speech.
+   */
+  audioFadeInSec?: number;
+  /**
+   * Phase 4 — EBU R128 loudness normalisation. Default false. Was globally
+   * on before; users reported the audio being "modified". Cinematic opts in.
+   */
+  applyLoudnorm?: boolean;
 };
 
 export type ProcessResult = {
@@ -247,6 +258,8 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
     cachedSilences,
     cachedDuration,
     onDetectionComplete,
+    audioFadeInSec = 0,
+    applyLoudnorm = false,
   } = opts;
   const ffmpeg = await loadFFmpeg(onLog);
   onProgress?.({ phase: "load", progress: 1 });
@@ -323,6 +336,19 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
   // FPS
   const fpsChain = exportOptions.fps ? `,fps=${exportOptions.fps}` : "";
 
+  // Phase 4 — audio chain is now opt-in. Default = no fade, no loudnorm,
+  // so speech comes out of the cut untouched acoustically. Cinematic preset
+  // (or any caller) can request them explicitly. Fading a real acoustic
+  // silence border produces an audible "suck-in"; loudnorm globally
+  // re-compresses dynamics and was the source of user reports that "the
+  // audio was modified".
+  const audioChain: string[] = [`aselect='${audioExpr}'`, "asetpts=N/SR/TB"];
+  if (audioFadeInSec > 0) {
+    audioChain.push(`afade=t=in:st=0:d=${audioFadeInSec.toFixed(3)}`);
+  }
+  if (applyLoudnorm) {
+    audioChain.push("loudnorm=I=-16:TP=-1.5:LRA=11");
+  }
   const filter =
     // setsar=1 normalises sample-aspect-ratio across segments so concat/
     // filter-graph output keeps the source's *displayed* dimensions instead
@@ -330,11 +356,7 @@ export async function processVideoRemoveSilence(file: File, opts: ProcessOptions
     // vertical (9:16) sources that some browsers hand FFmpeg with a
     // non-square SAR after rotation.
     `[0:v]select='${videoExpr}',setpts=N/FRAME_RATE/TB,setsar=1${scaleChain}${fpsChain}[v];` +
-    // afade on the concatenated stream removes the click at the very start/end
-    // of the export. Per-segment crossfade isn't applied here — increasing
-    // paddingSec is the recommended way to avoid clipping word boundaries.
-    `[0:a]aselect='${audioExpr}',asetpts=N/SR/TB,` +
-    `afade=t=in:st=0:d=0.02,loudnorm=I=-16:TP=-1.5:LRA=11[a]`;
+    `[0:a]${audioChain.join(",")}[a]`;
 
   onProgress?.({ phase: "audio", progress: 1 });
 

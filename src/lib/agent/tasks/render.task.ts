@@ -19,6 +19,7 @@ import { toShotstackPayload } from "@/lib/agent/renderers/shotstack-adapter";
 import { toFfmpegInvocation } from "@/lib/agent/renderers/ffmpeg-adapter";
 import type { CutPlan } from "@/lib/agent/cut-planner/types";
 import { planSegments } from "@/lib/agent/cut-planner/encoding-strategy";
+import { resolveIntent } from "@/lib/agent/cut-planner/intent-presets";
 
 export type RenderCtx = {
   params: TaskParams["render"];
@@ -91,6 +92,14 @@ async function runLocal(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<
   if (inv.forceKeyFramesArg) {
     ctx.onLog(`force_key_frames candidates: ${inv.forceKeyFramesArg}`);
   }
+  // Phase 4 — resolve the intent so the audio chain (fade + loudnorm) is
+  // driven by the preset instead of hard-coded defaults. Falls back to
+  // `natural` (no fade / no loudnorm) when no style was chosen.
+  const style = input.intent ?? null;
+  const resolved = resolveIntent(style ? { style } : null);
+  ctx.onLog(
+    `audio chain — fadeIn=${resolved.fadeInSec}s, loudnorm=${resolved.applyLoudnorm ? "on" : "off"} (preset=${resolved.style})`,
+  );
   const result = await processVideoRemoveSilence(input.file, {
     thresholdDb: -35,
     minPauseSec: 0.5,
@@ -98,6 +107,8 @@ async function runLocal(input: AgentInput, ctx: RenderCtx): Promise<NonNullable<
     exportOptions: ctx.params.exportOptions,
     cachedSilences: inv.silences,
     cachedDuration: inv.durationSec,
+    audioFadeInSec: resolved.fadeInSec,
+    applyLoudnorm: resolved.applyLoudnorm,
     onProgress: (e) => {
       if (e.phase === "encode" || e.phase === "audio") {
         ctx.onProgress(Math.min(1, e.progress));

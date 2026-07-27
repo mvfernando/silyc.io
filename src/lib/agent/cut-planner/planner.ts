@@ -18,6 +18,7 @@ import {
   targetShortenSec,
 } from "./score";
 import { snapToZeroCrossing } from "./snap";
+import { detectSilencesFromWaveform, type WaveformSilence } from "./waveform-silence";
 import type {
   CutCandidate,
   CutPlan,
@@ -78,8 +79,30 @@ export function planCuts(
     };
   }
 
-  // ---- 1) gaps → candidates --------------------------------------------
-  const gaps = extractGaps(words, total);
+  // ---- 1) primary silence source ---------------------------------------
+  // Prefer waveform-first (RMS) detection when PCM is available: it maps
+  // real silence in the audio, not transcript jitter. The transcript is
+  // then only used to protect word boundaries, trim head/tail, and remove
+  // fillers. When we have no audio we fall back to transcript gaps.
+  const useWaveform = !!(opts.audioSamples && opts.audioSampleRate);
+  const waveformSilences: WaveformSilence[] = useWaveform
+    ? detectSilencesFromWaveform(opts.audioSamples!, opts.audioSampleRate!, {
+        thresholdDb: opts.thresholdDb,
+        minSilenceSec: opts.minSilenceSec,
+        paddingSec: padding,
+      })
+    : [];
+  if (useWaveform) {
+    log.push({
+      level: "info",
+      tag: "keep",
+      message: `waveform-first: ${waveformSilences.length} silence(s) @ ${opts.thresholdDb ?? -40}dBFS`,
+    });
+  }
+
+  const gaps = useWaveform
+    ? waveformSilencesToGaps(waveformSilences, words, total, padding)
+    : extractGaps(words, total);
   for (const gap of gaps) {
     const isHead = !gap.before;
     const isTail = !gap.after;
@@ -125,9 +148,21 @@ export function planCuts(
     }
 
     const raw = scoreGapWithExplanations(gap);
-    const scaled = raw.score * preset.scoreScale;
+    // Waveform-detected silences already meet the duration/threshold gate,
+    // so we treat them as high-confidence removals without penalising
+    // shorter phrasing gaps: the ceiling is the preset scale itself.
+    const rawScore = useWaveform ? 1 : raw.score;
+    const scaled = rawScore * preset.scoreScale;
     const score = Math.max(0, Math.min(1, scaled));
     const explanations: DecisionExplanation[] = [...raw.explanations];
+    if (useWaveform) {
+      explanations.unshift({
+        factor: "waveform_silence",
+        weight: 1,
+        contribution: rawScore,
+        detail: "RMS below threshold",
+      });
+    }
     if (Math.abs(preset.scoreScale - 1) > 1e-6 && raw.explanations.length > 0) {
       const delta = score - raw.score;
       explanations.push({

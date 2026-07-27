@@ -154,6 +154,17 @@ export type ProcessOptions = {
   cachedDuration?: number;
   // When provided, called when detection completes, before encoding starts.
   onDetectionComplete?: (data: { silences: SilenceRange[]; totalDuration: number }) => void;
+  /**
+   * Phase 4 — audio fade-in at the very start of the assembled track.
+   * Default 0 (no fade). Only cinematic-preset callers should turn this on;
+   * fading a real acoustic silence sounds like a "suck-in" on speech.
+   */
+  audioFadeInSec?: number;
+  /**
+   * Phase 4 — EBU R128 loudness normalisation. Default false. Was globally
+   * on before; users reported the audio being "modified". Cinematic opts in.
+   */
+  applyLoudnorm?: boolean;
 };
 
 export type ProcessResult = {

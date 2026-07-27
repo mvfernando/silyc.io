@@ -169,6 +169,12 @@ export function AgentWorkspace() {
     setStyleState(next);
     writePersistedStyle(next);
   }, []);
+  // Phase 3 — sensitivity slider (dBFS threshold for waveform silence).
+  const [thresholdDb, setThresholdDbState] = useState<number>(() => readPersistedThreshold());
+  const setThresholdDb = useCallback((next: number) => {
+    setThresholdDbState(next);
+    writePersistedThreshold(next);
+  }, []);
   const [plan, setPlan] = useState<TaskPlan | null>(null);
   const [perTask, setPerTask] = useState<PerTask>({});
   const [done, setDone] = useState<Set<TaskId>>(new Set());
@@ -188,6 +194,8 @@ export function AgentWorkspace() {
   // (which may have been changed after the run started) and never the
   // "natural" default.
   const committedStyleRef = useRef<EditingStyle>("natural");
+  // Freeze the sensitivity for the current run so Retry/Refine reuse it.
+  const committedThresholdRef = useRef<number>(THRESHOLD_DEFAULT);
   const projectIdRef = useRef<string | null>(null);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [rating, setRating] = useState<FeedbackRating | null>(null);
@@ -249,10 +257,12 @@ export function AgentWorkspace() {
       sourceFile: File,
       refinement: RefinementChoice,
       chosenStyle: EditingStyle,
+      chosenThresholdDb: number,
     ) => {
       // Freeze the style for this run so Retry/Refine reuse it even if the
       // user changes the upload-screen selection afterwards.
       committedStyleRef.current = chosenStyle;
+      committedThresholdRef.current = chosenThresholdDb;
       setStage("working");
       setError(null);
       setPerTask({});
@@ -338,7 +348,7 @@ export function AgentWorkspace() {
       }
 
       const ctrl = runAgent(
-        { file: sourceFile, facts, refinement, intent: chosenStyle, userId },
+        { file: sourceFile, facts, refinement, intent: chosenStyle, thresholdDb: chosenThresholdDb, userId },
         {
           onEvent: (e: AgentEvent) => {
             if (e.type === "plan") setPlan(e.plan);

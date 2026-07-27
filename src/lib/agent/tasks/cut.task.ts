@@ -47,6 +47,8 @@ export async function runCutTask(
         audioSamples: audio?.samples,
         audioSampleRate: audio?.sampleRate,
         intent: ctx.params.intent,
+        thresholdDb: ctx.params.thresholdDb,
+        minSilenceSec: ctx.params.minPauseSec,
       });
       for (const entry of plan.log) ctx.onLog(entry.message);
 

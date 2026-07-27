@@ -32,6 +32,8 @@ export type SilenceGap = {
   localSpeakingRate: number;
   /** Relative position 0..1 (start..end of the clip). */
   relPosition: number;
+  /** RMS level (dBFS) when this gap came from waveform detection. */
+  rmsDb?: number;
 };
 
 export type FillerCandidate = {

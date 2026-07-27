@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-export type SilenceRange = { start: number; end: number };
+export type SilenceRange = { start: number; end: number; rmsDb?: number };
 
 function fmt(s: number): string {
   if (!Number.isFinite(s) || s < 0) s = 0;
@@ -109,6 +109,16 @@ export function SilenceTimeline({
                 ? (labels.manualKept ?? labels.kept)
                 : labels.kept;
           const title = `${label}: ${fmt(seg.start)} → ${fmt(seg.end)}`;
+          const rangeIndex = seg.index;
+          const rms =
+            rangeIndex !== undefined && silences[rangeIndex]?.rmsDb !== undefined
+              ? silences[rangeIndex].rmsDb
+              : undefined;
+          const segDur = Math.max(0, seg.end - seg.start);
+          const fullTitle =
+            seg.kind === "cut" && rms !== undefined
+              ? `${title} · ${rms.toFixed(0)} dBFS · ${Math.round(segDur * 1000)} ms`
+              : title;
           const previewBtn = onPreview && seg.index !== undefined && labels.preview ? (
             <button
               type="button"
@@ -132,8 +142,8 @@ export function SilenceTimeline({
               >
                 <button
                   type="button"
-                  title={title}
-                  aria-label={title}
+                  title={fullTitle}
+                  aria-label={fullTitle}
                   onClick={() => onToggle!(seg.index!)}
                   className={`h-full w-full cursor-pointer border-l border-r border-background/40 transition-colors ${baseClass}`}
                 />
@@ -144,7 +154,7 @@ export function SilenceTimeline({
           return (
             <div
               key={i}
-              title={title}
+              title={fullTitle}
               className={`group absolute top-0 h-full ${baseClass} ${selectionRing}`}
               style={{ left: `${left}%`, width: `${width}%` }}
             >

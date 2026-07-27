@@ -180,14 +180,14 @@ export function planCuts(
     if (decision === "remove") {
       const start = gap.start + padding;
       const end = gap.end - padding;
-      if (end > start) cut = { start, end };
+      if (end > start) cut = { start, end, rmsDb: gap.rmsDb };
     } else if (decision === "shorten") {
       const keepSec = targetShortenSec(gap);
       const removeAmount = Math.max(0, gap.durationSec - keepSec);
       const half = removeAmount / 2;
       // Remove from both sides equally so the kept fragment stays centred.
-      const leftCut: SilenceRange = { start: gap.start, end: gap.start + half };
-      const rightCut: SilenceRange = { start: gap.end - half, end: gap.end };
+      const leftCut: SilenceRange = { start: gap.start, end: gap.start + half, rmsDb: gap.rmsDb };
+      const rightCut: SilenceRange = { start: gap.end - half, end: gap.end, rmsDb: gap.rmsDb };
       const left: CutCandidate = {
         kind: "gap",
         gap,
@@ -270,7 +270,7 @@ export function planCuts(
       const a = snapToZeroCrossing(opts.audioSamples, c.cut.start, opts.audioSampleRate);
       const b = snapToZeroCrossing(opts.audioSamples, c.cut.end, opts.audioSampleRate);
       if (a.snapped || b.snapped) {
-        c.snappedCut = { start: a.time, end: b.time };
+        c.snappedCut = { start: a.time, end: b.time, rmsDb: c.cut.rmsDb };
         log.push(logForSnap(c, a.snapped ? a.deltaMs : b.deltaMs));
       }
     }
@@ -389,7 +389,7 @@ function waveformSilencesToGaps(
   // Head gap — always emit when there is space before the first word so the
   // renderer trims the intro even when it does not clear the RMS threshold.
   if (first.start > 0) {
-    gaps.push(buildWaveformGap(0, first.start, undefined, first, words, totalDuration));
+    gaps.push(buildWaveformGap(0, first.start, undefined, first, words, totalDuration, undefined));
   }
 
   for (const s of silences) {
@@ -406,12 +406,12 @@ function waveformSilencesToGaps(
     const start = Math.max(s.start, lo);
     const end = Math.min(s.end, hi);
     if (end - start < 0.05) continue;
-    gaps.push(buildWaveformGap(start, end, before, after, words, totalDuration));
+    gaps.push(buildWaveformGap(start, end, before, after, words, totalDuration, s.rmsDb));
   }
 
   // Tail gap
   if (totalDuration > last.end) {
-    gaps.push(buildWaveformGap(last.end, totalDuration, last, undefined, words, totalDuration));
+    gaps.push(buildWaveformGap(last.end, totalDuration, last, undefined, words, totalDuration, undefined));
   }
 
   return gaps;
@@ -424,6 +424,7 @@ function buildWaveformGap(
   after: Word | undefined,
   allWords: Word[],
   totalDuration: number,
+  rmsDb: number | undefined,
 ): SilenceGap {
   const midpoint = (start + end) / 2;
   return {
@@ -436,5 +437,6 @@ function buildWaveformGap(
     endsWithSoftBoundary: before ? endsWithSoftBoundary(before.text) : false,
     localSpeakingRate: speakingRateAround(allWords, midpoint, 3),
     relPosition: totalDuration > 0 ? Math.min(1, Math.max(0, midpoint / totalDuration)) : 0,
+    rmsDb,
   };
 }

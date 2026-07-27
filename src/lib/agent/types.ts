@@ -211,6 +211,12 @@ export type AgentInput = {
    * refinement, so the planner scores this pipeline through the preset.
    */
   intent?: import("./cut-planner/contracts").EditingStyle;
+  /**
+   * Waveform silence threshold in dBFS (Phase 3 — sensitivity slider).
+   * Overrides `TaskParams["cut"].thresholdDb` when set. Typical range
+   * [-50, -25]; default resolved by DecisionEngine is -35.
+   */
+  thresholdDb?: number;
   /** Optional Supabase user id; needed for cache + storage paths. */
   userId: string | null;
 };

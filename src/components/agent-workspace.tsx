@@ -44,6 +44,9 @@ import { useI18n } from "@/lib/i18n";
 import { validateUpload } from "@/lib/validate-upload";
 import { formatFileSize, MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 import { formatDuration } from "@/lib/ffmpeg-processor";
+import { processVideoRemoveSilence, defaultExportOptions, type ExportOptions } from "@/lib/ffmpeg-processor";
+import { PreviewModal } from "@/components/preview-modal";
+import { buildMarkdownReport, downloadMarkdownReport } from "@/lib/agent/report-md";
 import {
   clearSnapshot,
   isRecent,
@@ -186,6 +189,7 @@ export function AgentWorkspace() {
   const [results, setResults] = useState<TaskResults | null>(null);
   const [receipt, setReceipt] = useState<ValueReceipt | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastFacts, setLastFacts] = useState<AnalysisFacts | null>(null);
 
   const controllerRef = useRef<AgentController | null>(null);
   const localBlobRef = useRef<string | null>(null);
@@ -333,6 +337,7 @@ export function AgentWorkspace() {
         aspectRatio: validation?.aspectRatio,
         orientation: validation?.orientation,
       };
+      setLastFacts(facts);
       if (validation?.width && validation?.height) {
         const label =
           validation.aspectRatio && validation.aspectRatio !== "unknown"
@@ -564,6 +569,9 @@ export function AgentWorkspace() {
             outputUrl={outputUrl}
             originalFile={file}
             results={results}
+            facts={lastFacts}
+            style={committedStyleRef.current}
+            thresholdDb={committedThresholdRef.current}
             showRefine={showRefine}
             rating={rating}
             savedProjectId={savedProjectId}
@@ -1040,6 +1048,9 @@ function ReadyStage({
   outputUrl,
   originalFile,
   results,
+  facts,
+  style,
+  thresholdDb,
   showRefine,
   rating,
   savedProjectId,
@@ -1060,6 +1071,9 @@ function ReadyStage({
   outputUrl: string | null;
   originalFile: File | null;
   results: TaskResults | null;
+  facts: AnalysisFacts | null;
+  style: EditingStyle;
+  thresholdDb: number;
   showRefine: boolean;
   rating: FeedbackRating | null;
   savedProjectId: string | null;
@@ -1082,6 +1096,68 @@ function ReadyStage({
   useEffect(() => () => {
     if (originalUrl) URL.revokeObjectURL(originalUrl);
   }, [originalUrl]);
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [reExportBusy, setReExportBusy] = useState<null | ExportOptions["container"]>(null);
+  const [reExportPct, setReExportPct] = useState(0);
+  const [reExportUrl, setReExportUrl] = useState<string | null>(null);
+  const [reExportContainer, setReExportContainer] = useState<ExportOptions["container"]>("mp4");
+  useEffect(() => () => {
+    if (reExportUrl) URL.revokeObjectURL(reExportUrl);
+  }, [reExportUrl]);
+
+  const effectiveOutputUrl = reExportUrl ?? outputUrl;
+  const effectiveExt =
+    reExportUrl != null ? reExportContainer : (originalFile?.name.split(".").pop() ?? "mp4");
+
+  const canReport = facts && results;
+  const canReExport = !!originalFile && !!results?.cut;
+
+  const handleDownloadReport = () => {
+    if (!facts) return;
+    const md = buildMarkdownReport({
+      facts,
+      receipt,
+      results,
+      style,
+      thresholdDb,
+    });
+    const base = (facts.fileName || "silyc").replace(/\.[^.]+$/, "");
+    downloadMarkdownReport(`silyc-report-${base}.md`, md);
+  };
+
+  const runReExport = async (container: ExportOptions["container"]) => {
+    if (!originalFile || !results?.cut || reExportBusy) return;
+    setReExportBusy(container);
+    setReExportPct(0);
+    try {
+      const opts: ExportOptions = { ...defaultExportOptions, container };
+      const out = await processVideoRemoveSilence(originalFile, {
+        thresholdDb: -35,
+        minPauseSec: 0.5,
+        paddingSec: 0.1,
+        exportOptions: opts,
+        cachedSilences: results.cut.silences,
+        cachedDuration: results.cut.durationSec,
+        applyLoudnorm: style === "cinematic",
+        audioFadeInSec: style === "cinematic" ? 0.02 : 0,
+        onProgress: (e) => {
+          if (e.phase === "encode" || e.phase === "audio") {
+            setReExportPct(Math.round(Math.min(1, e.progress) * 100));
+          }
+        },
+      });
+      const url = URL.createObjectURL(out.outputBlob);
+      if (reExportUrl) URL.revokeObjectURL(reExportUrl);
+      setReExportUrl(url);
+      setReExportContainer(container);
+      toast.success(t.agent_reexport_done);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReExportBusy(null);
+    }
+  };
 
   return (
     <motion.div
@@ -1183,9 +1259,9 @@ function ReadyStage({
       )}
 
       {/* Preview */}
-      {outputUrl && (
+      {effectiveOutputUrl && (
         <div className="mt-10 rounded-2xl border border-border/60 overflow-hidden bg-black">
-          <video src={outputUrl} controls className="w-full max-h-[60vh]" />
+          <video src={effectiveOutputUrl} controls className="w-full max-h-[60vh]" />
         </div>
       )}
 
@@ -1194,13 +1270,27 @@ function ReadyStage({
 
       {/* Actions */}
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        {outputUrl && (
+        {effectiveOutputUrl && (
           <a
-            href={outputUrl}
-            download={originalFile ? `silyc-${originalFile.name}` : "silyc-output.mp4"}
+            href={effectiveOutputUrl}
+            download={
+              originalFile
+                ? `silyc-${originalFile.name.replace(/\.[^.]+$/, "")}.${effectiveExt}`
+                : `silyc-output.${effectiveExt}`
+            }
           >
             <Button size="lg">{t.agent_download}</Button>
           </a>
+        )}
+        {originalUrl && effectiveOutputUrl && (
+          <Button variant="outline" size="lg" onClick={() => setPreviewOpen(true)}>
+            {t.agent_preview_ab}
+          </Button>
+        )}
+        {canReport && (
+          <Button variant="outline" size="lg" onClick={handleDownloadReport}>
+            {t.agent_report_download}
+          </Button>
         )}
         <Button variant="outline" size="lg" onClick={onAskRefine}>
           {t.agent_refine}
@@ -1209,6 +1299,51 @@ function ReadyStage({
           {t.agent_new_video}
         </Button>
       </div>
+
+      {canReExport && (
+        <div className="mt-6 mx-auto max-w-xl rounded-2xl border border-border/60 bg-muted/10 p-5">
+          <p className="text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80">
+            {t.agent_reexport_title}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            {(["mp4", "webm", "mov"] as const).map((c) => (
+              <Button
+                key={c}
+                variant="ghost"
+                size="sm"
+                disabled={reExportBusy != null}
+                onClick={() => runReExport(c)}
+              >
+                {reExportBusy === c
+                  ? `${t.agent_reexport_running} ${reExportPct}%`
+                  : c === "mp4"
+                    ? t.agent_reexport_mp4
+                    : c === "webm"
+                      ? t.agent_reexport_webm
+                      : t.agent_reexport_mov}
+              </Button>
+            ))}
+          </div>
+          {reExportBusy && (
+            <div className="mt-3">
+              <Progress value={reExportPct} />
+            </div>
+          )}
+        </div>
+      )}
+
+      <PreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        sourceUrl={originalUrl ?? undefined}
+        outputUrl={effectiveOutputUrl ?? undefined}
+        downloadUrl={effectiveOutputUrl ?? undefined}
+        downloadName={
+          originalFile
+            ? `silyc-${originalFile.name.replace(/\.[^.]+$/, "")}.${effectiveExt}`
+            : `silyc-output.${effectiveExt}`
+        }
+      />
       {savedProjectId && (
         <p className="mt-4 text-center text-xs text-muted-foreground">
           <Link

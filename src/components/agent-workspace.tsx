@@ -393,9 +393,9 @@ export function AgentWorkspace() {
         return;
       }
       setFile(f);
-      await startAgent(f, "none", style, thresholdDb);
+      await startAgent(f, "none", AUTO_STYLE, AUTO_THRESHOLD_DB);
     },
-    [startAgent, style, thresholdDb, t.agent_file_too_large],
+    [startAgent, t.agent_file_too_large],
   );
 
   const globalProgress = useMemo(() => {
@@ -476,10 +476,6 @@ export function AgentWorkspace() {
           <UploadStage
             key="upload"
             t={t}
-            style={style}
-            onStyleChange={setStyle}
-            thresholdDb={thresholdDb}
-            onThresholdChange={setThresholdDb}
             onFile={handleFile}
             onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
           />

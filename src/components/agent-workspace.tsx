@@ -720,6 +720,32 @@ function UploadStage({
         </div>
       </div>
 
+      <div className="mb-8">
+        <div className="flex items-baseline justify-between mb-2">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground/70">
+            {t.agent_sensitivity_title}
+          </p>
+          <p className="text-xs font-mono text-foreground/80 tabular-nums">
+            {thresholdDb} dBFS
+          </p>
+        </div>
+        <Slider
+          value={[thresholdDb]}
+          min={THRESHOLD_MIN}
+          max={THRESHOLD_MAX}
+          step={1}
+          onValueChange={(v) => onThresholdChange(v[0] ?? THRESHOLD_DEFAULT)}
+          aria-label={t.agent_sensitivity_title}
+        />
+        <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground/70">
+          <span>{t.agent_sensitivity_aggressive}</span>
+          <span className="text-muted-foreground/90">
+            {t.agent_sensitivity_hint.replace("{db}", String(thresholdDb))}
+          </span>
+          <span>{t.agent_sensitivity_conservative}</span>
+        </div>
+      </div>
+
       <div
         onDragOver={(e) => {
           e.preventDefault();

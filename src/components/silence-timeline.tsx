@@ -114,10 +114,10 @@ export function SilenceTimeline({
             rangeIndex !== undefined && silences[rangeIndex]?.rmsDb !== undefined
               ? silences[rangeIndex].rmsDb
               : undefined;
-          const dur = Math.max(0, seg.end - seg.start);
+          const segDur = Math.max(0, seg.end - seg.start);
           const fullTitle =
             seg.kind === "cut" && rms !== undefined
-              ? `${title} · ${rms.toFixed(0)} dBFS · ${Math.round(dur * 1000)} ms`
+              ? `${title} · ${rms.toFixed(0)} dBFS · ${Math.round(segDur * 1000)} ms`
               : title;
           const previewBtn = onPreview && seg.index !== undefined && labels.preview ? (
             <button

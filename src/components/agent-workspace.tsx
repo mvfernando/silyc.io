@@ -531,6 +531,8 @@ export function AgentWorkspace() {
             t={t}
             style={style}
             onStyleChange={setStyle}
+            thresholdDb={thresholdDb}
+            onThresholdChange={setThresholdDb}
             onFile={handleFile}
             onLegacy={() => navigate({ to: "/app", search: { legacy: "1" } as never })}
           />

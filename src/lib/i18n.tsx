@@ -839,6 +839,10 @@ const dict = {
     agent_style_dynamic_hint: "Tighter pacing, removes fillers",
     agent_style_cinematic: "Cinematic",
     agent_style_cinematic_hint: "Preserves dramatic pauses",
+    agent_sensitivity_title: "Sensitivity",
+    agent_sensitivity_hint: "Detects pauses ≥ 350ms below {db} dBFS",
+    agent_sensitivity_aggressive: "Aggressive",
+    agent_sensitivity_conservative: "Conservative",
     // ---- Sprint B · "Why" — top auditable factors ----
     agent_why_title: "Why these cuts",
     agent_why_silence_duration: "Long silence",

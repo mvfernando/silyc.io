@@ -334,6 +334,7 @@ export function AgentWorkspace() {
         aspectRatio: validation?.aspectRatio,
         orientation: validation?.orientation,
       };
+      setLastFacts(facts);
       if (validation?.width && validation?.height) {
         const label =
           validation.aspectRatio && validation.aspectRatio !== "unknown"

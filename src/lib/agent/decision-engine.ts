@@ -60,6 +60,7 @@ export function decide(
   facts: AnalysisFacts,
   refinement: RefinementChoice = "none",
   intentStyle?: EditingStyle,
+  thresholdDb?: number,
 ): TaskPlan {
   const reasoning: string[] = [];
 
@@ -82,6 +83,11 @@ export function decide(
       ? { style: intentStyle }
       : intentFromRefinement(refinement),
   };
+  // Phase 3 — user-supplied sensitivity wins over any preset/refinement.
+  if (typeof thresholdDb === "number" && Number.isFinite(thresholdDb)) {
+    cut.thresholdDb = thresholdDb;
+    reasoning.push(`cut threshold overridden by user: ${thresholdDb}dBFS`);
+  }
   if (intentStyle)
     reasoning.push(`cut tuned for intent style=${intentStyle}`);
   else if (refinement !== "none")

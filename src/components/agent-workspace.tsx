@@ -589,33 +589,15 @@ export function AgentWorkspace() {
 
 function UploadStage({
   t,
-  style,
-  onStyleChange,
-  thresholdDb,
-  onThresholdChange,
   onFile,
   onLegacy,
 }: {
   t: ReturnType<typeof useI18n>["t"];
-  style: EditingStyle;
-  onStyleChange: (s: EditingStyle) => void;
-  thresholdDb: number;
-  onThresholdChange: (n: number) => void;
   onFile: (f: File) => void;
   onLegacy: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
-
-  const styleOptions: Array<{
-    id: EditingStyle;
-    label: string;
-    hint: string;
-  }> = [
-    { id: "natural", label: t.agent_style_natural, hint: t.agent_style_natural_hint },
-    { id: "dynamic", label: t.agent_style_dynamic, hint: t.agent_style_dynamic_hint },
-    { id: "cinematic", label: t.agent_style_cinematic, hint: t.agent_style_cinematic_hint },
-  ];
 
   return (
     <motion.div
@@ -632,63 +614,6 @@ function UploadStage({
         <p className="mt-4 text-muted-foreground text-base">
           {t.agent_upload_subtitle}
         </p>
-      </div>
-
-      <div className="mb-8">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground/70 text-center mb-3">
-          {t.agent_style_title}
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {styleOptions.map((opt) => {
-            const selected = style === opt.id;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => onStyleChange(opt.id)}
-                aria-pressed={selected}
-                className={`text-left rounded-xl border p-4 transition-colors ${
-                  selected
-                    ? "border-primary bg-primary/5"
-                    : "border-border/60 bg-muted/10 hover:bg-muted/30"
-                }`}
-              >
-                <div className="text-sm font-medium text-foreground">
-                  {opt.label}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {opt.hint}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mb-8">
-        <div className="flex items-baseline justify-between mb-2">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground/70">
-            {t.agent_sensitivity_title}
-          </p>
-          <p className="text-xs font-mono text-foreground/80 tabular-nums">
-            {thresholdDb} dBFS
-          </p>
-        </div>
-        <Slider
-          value={[thresholdDb]}
-          min={THRESHOLD_MIN}
-          max={THRESHOLD_MAX}
-          step={1}
-          onValueChange={(v) => onThresholdChange(v[0] ?? THRESHOLD_DEFAULT)}
-          aria-label={t.agent_sensitivity_title}
-        />
-        <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground/70">
-          <span>{t.agent_sensitivity_aggressive}</span>
-          <span className="text-muted-foreground/90">
-            {t.agent_sensitivity_hint.replace("{db}", String(thresholdDb))}
-          </span>
-          <span>{t.agent_sensitivity_conservative}</span>
-        </div>
       </div>
 
       <div
